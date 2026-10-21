@@ -12,6 +12,9 @@ requires-python = ">=3.11"
 # Dependencies are added in the phase that first needs them, so each phase's PR shows why.
 dependencies = [
     "python-dotenv>=1.0",
+    # phase 1: data loading
+    "duckdb>=1.1",
+    "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +25,7 @@ dev = [
 
 [tool.setuptools]
 py-modules = ["config"]
+packages = ["db", "etl"]
 
 [tool.ruff]
 line-length = 100

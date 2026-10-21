@@ -13,4 +13,18 @@ db-up:
 db-down:
 	docker compose down
 
-.PHONY: install lint test db-up db-down
+migrate:
+	python -m db.migrate
+
+resample:
+	python -m etl.resample_to_daily archive data/prices_daily.parquet
+
+load: migrate
+	python -m etl.load_db data/prices_daily.parquet
+
+verify-data:
+	python -m etl.verify_load
+
+data: resample load verify-data
+
+.PHONY: install lint test db-up db-down migrate resample load verify-data data

@@ -1,0 +1,117 @@
+symbol,name,sector,industry,is_index
+ABB,ABB India,Capital Goods,Electrical Equipment,false
+ADANIENSOL,Adani Energy Solutions,Power,Power Transmission,false
+ADANIENT,Adani Enterprises,Metals & Mining,Diversified,false
+ADANIGREEN,Adani Green Energy,Power,Renewable Power,false
+ADANIPORTS,Adani Ports and SEZ,Services,Ports & Logistics,false
+ADANIPOWER,Adani Power,Power,Power Generation,false
+AMBUJACEM,Ambuja Cements,Construction Materials,Cement,false
+APOLLOHOSP,Apollo Hospitals Enterprise,Healthcare,Hospitals,false
+ASIANPAINT,Asian Paints,Consumer Durables,Paints,false
+ATGL,Adani Total Gas,Oil Gas & Fuels,Gas Distribution,false
+AXISBANK,Axis Bank,Financial Services,Private Bank,false
+BAJAJ-AUTO,Bajaj Auto,Automobile,Two & Three Wheelers,false
+BAJAJFINSV,Bajaj Finserv,Financial Services,Financial Holding,false
+BAJAJHFL,Bajaj Housing Finance,Financial Services,Housing Finance,false
+BAJAJHLDNG,Bajaj Holdings & Investment,Financial Services,Financial Holding,false
+BAJFINANCE,Bajaj Finance,Financial Services,NBFC,false
+BANKBARODA,Bank of Baroda,Financial Services,PSU Bank,false
+BEL,Bharat Electronics,Capital Goods,Aerospace & Defence,false
+BHARTIARTL,Bharti Airtel,Telecommunication,Telecom Services,false
+BHEL,Bharat Heavy Electricals,Capital Goods,Heavy Electrical Equipment,false
+BOSCHLTD,Bosch,Automobile,Auto Components,false
+BPCL,Bharat Petroleum Corporation,Oil Gas & Fuels,Refining & Marketing,false
+BRITANNIA,Britannia Industries,FMCG,Packaged Foods,false
+CANBK,Canara Bank,Financial Services,PSU Bank,false
+CGPOWER,CG Power and Industrial Solutions,Capital Goods,Electrical Equipment,false
+CHOLAFIN,Cholamandalam Investment and Finance,Financial Services,NBFC,false
+CIPLA,Cipla,Healthcare,Pharmaceuticals,false
+COALINDIA,Coal India,Oil Gas & Fuels,Coal,false
+CUMMINSIND,Cummins India,Capital Goods,Industrial Machinery,false
+DABUR,Dabur India,FMCG,Personal Care,false
+DIVISLAB,Divi's Laboratories,Healthcare,Pharmaceuticals,false
+DLF,DLF,Realty,Real Estate,false
+DMART,Avenue Supermarts,Consumer Services,Retail,false
+DRREDDY,Dr. Reddy's Laboratories,Healthcare,Pharmaceuticals,false
+EICHERMOT,Eicher Motors,Automobile,Two & Three Wheelers,false
+ENRIN,Siemens Energy India,Capital Goods,Electrical Equipment,false
+ETERNAL,Eternal (Zomato),Consumer Services,Online Services,false
+GAIL,GAIL (India),Oil Gas & Fuels,Gas Transmission,false
+GODREJCP,Godrej Consumer Products,FMCG,Personal Care,false
+GRASIM,Grasim Industries,Construction Materials,Cement & Diversified,false
+HAL,Hindustan Aeronautics,Capital Goods,Aerospace & Defence,false
+HAVELLS,Havells India,Consumer Durables,Electrical Appliances,false
+HCLTECH,HCL Technologies,Information Technology,IT Services,false
+HDFCAMC,HDFC Asset Management Company,Financial Services,Asset Management,false
+HDFCBANK,HDFC Bank,Financial Services,Private Bank,false
+HDFCLIFE,HDFC Life Insurance Company,Financial Services,Insurance,false
+HEROMOTOCO,Hero MotoCorp,Automobile,Two & Three Wheelers,false
+HINDALCO,Hindalco Industries,Metals & Mining,Aluminium,false
+HINDUNILVR,Hindustan Unilever,FMCG,Diversified FMCG,false
+HINDZINC,Hindustan Zinc,Metals & Mining,Zinc,false
+HYUNDAI,Hyundai Motor India,Automobile,Passenger Vehicles,false
+ICICIBANK,ICICI Bank,Financial Services,Private Bank,false
+ICICIGI,ICICI Lombard General Insurance,Financial Services,Insurance,false
+ICICIPRULI,ICICI Prudential Life Insurance,Financial Services,Insurance,false
+INDHOTEL,Indian Hotels Company,Consumer Services,Hotels,false
+INDIGO,InterGlobe Aviation,Services,Airlines,false
+INDUSINDBK,IndusInd Bank,Financial Services,Private Bank,false
+INFY,Infosys,Information Technology,IT Services,false
+IOC,Indian Oil Corporation,Oil Gas & Fuels,Refining & Marketing,false
+IRCTC,Indian Railway Catering and Tourism Corporation,Consumer Services,Travel Services,false
+IRFC,Indian Railway Finance Corporation,Financial Services,Government Financing,false
+ITC,ITC,FMCG,Diversified FMCG,false
+JINDALSTEL,Jindal Steel & Power,Metals & Mining,Steel,false
+JIOFIN,Jio Financial Services,Financial Services,NBFC,false
+JSWENERGY,JSW Energy,Power,Power Generation,false
+JSWSTEEL,JSW Steel,Metals & Mining,Steel,false
+KOTAKBANK,Kotak Mahindra Bank,Financial Services,Private Bank,false
+LICI,Life Insurance Corporation of India,Financial Services,Insurance,false
+LODHA,Lodha Developers,Realty,Real Estate,false
+LT,Larsen & Toubro,Construction,Engineering & Construction,false
+LTM,LTIMindtree,Information Technology,IT Services,false
+MARUTI,Maruti Suzuki India,Automobile,Passenger Vehicles,false
+MAXHEALTH,Max Healthcare Institute,Healthcare,Hospitals,false
+MAZDOCK,Mazagon Dock Shipbuilders,Capital Goods,Aerospace & Defence,false
+MM,Mahindra & Mahindra,Automobile,Passenger Vehicles,false
+MOTHERSON,Samvardhana Motherson International,Automobile,Auto Components,false
+MUTHOOTFIN,Muthoot Finance,Financial Services,NBFC,false
+NAUKRI,Info Edge (India),Consumer Services,Online Services,false
+NESTLEIND,Nestle India,FMCG,Packaged Foods,false
+NHPC,NHPC,Power,Power Generation,false
+NIFTY50,NIFTY 50 Index,Index,Broad Market Index,true
+NIFTYBANK,NIFTY Bank Index,Index,Sectoral Index,true
+NTPC,NTPC,Power,Power Generation,false
+ONGC,Oil and Natural Gas Corporation,Oil Gas & Fuels,Oil Exploration & Production,false
+PFC,Power Finance Corporation,Financial Services,Government Financing,false
+PIDILITIND,Pidilite Industries,Chemicals,Specialty Chemicals,false
+PNB,Punjab National Bank,Financial Services,PSU Bank,false
+POWERGRID,Power Grid Corporation of India,Power,Power Transmission,false
+RECLTD,REC,Financial Services,Government Financing,false
+RELIANCE,Reliance Industries,Oil Gas & Fuels,Refining & Diversified,false
+SBILIFE,SBI Life Insurance Company,Financial Services,Insurance,false
+SBIN,State Bank of India,Financial Services,PSU Bank,false
+SHREECEM,Shree Cement,Construction Materials,Cement,false
+SHRIRAMFIN,Shriram Finance,Financial Services,NBFC,false
+SIEMENS,Siemens,Capital Goods,Electrical Equipment,false
+SOLARINDS,Solar Industries India,Chemicals,Explosives,false
+SUNPHARMA,Sun Pharmaceutical Industries,Healthcare,Pharmaceuticals,false
+TATACAP,Tata Capital,Financial Services,NBFC,false
+TATACONSUM,Tata Consumer Products,FMCG,Packaged Foods,false
+TATAPOWER,Tata Power Company,Power,Integrated Power Utility,false
+TATASTEEL,Tata Steel,Metals & Mining,Steel,false
+TCS,Tata Consultancy Services,Information Technology,IT Services,false
+TECHM,Tech Mahindra,Information Technology,IT Services,false
+TITAN,Titan Company,Consumer Durables,Jewellery & Watches,false
+TMCV,Tata Motors (Commercial Vehicles),Automobile,Commercial Vehicles,false
+TMPV,Tata Motors Passenger Vehicles (formerly Tata Motors),Automobile,Passenger Vehicles,false
+TORNTPHARM,Torrent Pharmaceuticals,Healthcare,Pharmaceuticals,false
+TRENT,Trent,Consumer Services,Retail,false
+TVSMOTOR,TVS Motor Company,Automobile,Two & Three Wheelers,false
+ULTRACEMCO,UltraTech Cement,Construction Materials,Cement,false
+UNIONBANK,Union Bank of India,Financial Services,PSU Bank,false
+UNITDSPR,United Spirits,FMCG,Beverages,false
+VBL,Varun Beverages,FMCG,Beverages,false
+VEDL,Vedanta,Metals & Mining,Diversified Metals,false
+WIPRO,Wipro,Information Technology,IT Services,false
+ZYDUSLIFE,Zydus Lifesciences,Healthcare,Pharmaceuticals,false
