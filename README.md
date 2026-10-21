@@ -34,7 +34,7 @@ Python 3.12, LangGraph, Claude (Haiku for routing and guards, Sonnet for SQL and
 cp .env.example .env        # then fill in values
 make install                # uv venv + editable install with dev tools
 make db-up                  # Postgres on localhost:5433
-make data                   # archive/ -> daily Parquet -> Postgres, then sanity checks
+make data                   # archive/ -> daily prices -> synthetic portfolios, with checks
 make test                   # includes database guardrail tests (needs Postgres up)
 ```
 
@@ -42,6 +42,14 @@ make test                   # includes database guardrail tests (needs Postgres 
 `make data` turns about 110M minute bars into about 288k daily bars for 114 stocks and 2 indices (2015–2026). It drops zero-price bars and pre-listing junk, and adjusts three demergers the source missed; see [DESIGN_NOTES.md](DESIGN_NOTES.md#phase-1-data-foundation). Sectors come from a hand-built map in `etl/securities.csv`.
 
 The raw data is 1-minute OHLCV bars for each stock plus the NIFTY 50 and NIFTY BANK indices. It is not committed because of its size (5.3 GB). Download it into `archive/` (one `<SYMBOL>_minute.csv` per stock). Source: _TODO: add dataset link_.
+
+## The synthetic book
+There are 3 fictional managers and 7 portfolios (Banking, Balanced, Tech, Defensive, Consumption, PSU & Energy, Infrastructure). Each one trades real NSE closes from a random start in 2016–2021 until April 2026. The simulation covers quarterly rebalancing within a drift band, discretionary swaps, deposits and withdrawals, forced exits when a stock's data ends, and 0.03% fees. The generator is seeded, so every rebuild gives the same book, and it refuses to write anything that breaks an invariant (negative cash, shorts, trades off the closing price …).
+
+## Limitations, stated up front
+- **Survivorship bias.** The universe is today's index members, so every portfolio beats its benchmark. Equal-weighting those stocks from 2016 returns 20.5% a year against the NIFTY's 11.6%. That is the bias, not skill.
+- **Price returns only.** Dividends aren't in the data.
+- **The portfolios are synthetic.** They trade like a disciplined manager would, but they are not real funds.
 
 ## Design notes
 [DESIGN_NOTES.md](DESIGN_NOTES.md) explains why each decision was made, phase by phase.

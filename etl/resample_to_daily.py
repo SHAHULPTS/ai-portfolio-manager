@@ -68,13 +68,22 @@ WITH kept AS (
     WHERE (l.listed_on IS NULL OR d.date >= l.listed_on)
       AND NOT EXISTS (SELECT 1 FROM bad_days b WHERE b.symbol = d.symbol AND b.date = d.date)
 ),
-factors AS (
+prev_close AS (
     SELECT m.symbol, m.ex_date,
-           ex.close / (SELECT p.close FROM kept p
-                       WHERE p.symbol = m.symbol AND p.date < m.ex_date
-                       ORDER BY p.date DESC LIMIT 1) AS f
+           (SELECT p.close FROM kept p WHERE p.symbol = m.symbol AND p.date < m.ex_date
+            ORDER BY p.date DESC LIMIT 1) AS stock_prev,
+           (SELECT p.close FROM kept p WHERE p.symbol = 'NIFTY50' AND p.date < m.ex_date
+            ORDER BY p.date DESC LIMIT 1) AS index_prev
     FROM demergers m
-    JOIN kept ex ON ex.symbol = m.symbol AND ex.date = m.ex_date
+),
+factors AS (
+    -- Stock's ex-date move divided by the market's, so the adjusted stock moves with the
+    -- market that day. Without index data (e.g. in unit tests) the market move counts as 0.
+    SELECT pc.symbol, pc.ex_date,
+           (ex.close / pc.stock_prev) / coalesce(ix.close / pc.index_prev, 1) AS f
+    FROM prev_close pc
+    JOIN kept ex ON ex.symbol = pc.symbol AND ex.date = pc.ex_date
+    LEFT JOIN kept ix ON ix.symbol = 'NIFTY50' AND ix.date = pc.ex_date
 ),
 scaled AS (
     SELECT k.*,

@@ -86,3 +86,19 @@ def test_corrections(tmp_path):
     assert got[("ABC", "2024-01-02")][3] == 60  # 100 scaled by 0.6
     assert got[("ABC", "2024-01-04")][3] == 60
     assert got[("ABC", "2024-01-05")][3] == 60  # ex-date itself unchanged
+
+
+def test_demerger_adjustment_keeps_the_market_move(tmp_path):
+    # Market falls 5% on the ex-date; the stock falls 43%. The adjusted stock should fall 5%.
+    stock = write(
+        tmp_path / "ABC_minute.csv",
+        ["2024-01-04 15:29:00,100,100,100,100,1", "2024-01-05 15:29:00,57,57,57,57,1"],
+    )
+    index = write(
+        tmp_path / "NIFTY 50_minute.csv",
+        ["2024-01-04 15:29:00,200,200,200,200,0", "2024-01-05 15:29:00,190,190,190,190,0"],
+    )
+    got = bars(tmp_path, {stock: "ABC", index: "NIFTY50"}, demergers=[("ABC", "2024-01-05")])
+    prev, ex = got[("ABC", "2024-01-04")][3], got[("ABC", "2024-01-05")][3]
+    assert ex == 57
+    assert round(ex / prev - 1, 4) == -0.05

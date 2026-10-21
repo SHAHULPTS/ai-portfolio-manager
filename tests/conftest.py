@@ -6,6 +6,7 @@ from psycopg.conninfo import make_conninfo
 
 from config import load_settings
 from db.migrate import migrate
+from etl.refresh_derived import refresh
 
 TEST_DB = "portfolio_test"
 
@@ -68,3 +69,4 @@ def _seed(admin_url: str) -> None:
             "INSERT INTO core.cash_flows (portfolio_id, date, amount, type)"
             " VALUES (10, '2024-01-01', 1000000, 'DEPOSIT'), (20, '2024-01-01', 2000000, 'DEPOSIT')"
         )
+        refresh(conn)

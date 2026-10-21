@@ -67,11 +67,15 @@ The reports turned up these problems:
 | Diwali Muhurat sessions | Evening bars (17:30–19:29) on one day each year | **Keep**: these were real trades |
 | Junk before listing | SBILIFE has prices from 2015 at ₹13 and jumps 5,259% on 2017-10-03, its listing day. HDFCLIFE, IRCTC and IRFC look the same. | Drop bars before each stock's real listing date |
 | One-day unadjusted spikes | e.g. BEL ₹34 → ₹101 → ₹33 over 2015-09-10 to 09-14. INFY, DIVISLAB, MOTHERSON and ZYDUSLIFE have the same pattern. | Drop those days |
-| Unadjusted demergers | CGPOWER −72% on 2016-03-15, ADANIENT −42% on 2015-06-03, TMPV −14% on 2025-10-14 (the Tata Motors CV demerger) | Scale all earlier prices by the ex-date price ratio |
+| Unadjusted demergers | CGPOWER −72% (2016-03-15), ADANIENT −42% (2015-06-03), SIEMENS −24% (2025-04-07, ENRIN split), GRASIM −20% (2017-07-19, Aditya Birla Capital split), TMPV −14% (2025-10-14, Tata Motors CV split) | Scale earlier prices so the ex-date move matches the NIFTY's |
 
 The listing-date, bad-day and demerger fixes are in `etl/corrections.py` as plain lists, each with a comment saying why. They are not patched into the database by hand, so `make data` always rebuilds the same clean result.
 
-**Why the demergers matter:** a portfolio holding TMPV in October 2025 would have shown a 14% loss on paper that no real investor suffered, because they received TMCV shares worth the difference. The adjustment assumes the market itself was flat on the ex-date. That is an error of about one day's market move, far smaller than the fake loss it removes.
+**Why the demergers matter:** a portfolio holding TMPV in October 2025 would have shown a 14% loss on paper that no real investor suffered, because they received TMCV shares worth the difference.
+
+**How the adjustment works:** every price before the ex-date is multiplied by `(stock_ex / stock_prev) / (nifty_ex / nifty_prev)`. The adjusted stock then moves exactly with the market on the ex-date, and the rest of the drop is put down to the demerger. My first version used the plain price ratio, which assumes the market was flat. SIEMENS's ex-date was the 2025-04-07 tariff crash (NIFTY −3.2%), and that version would have erased a real fall.
+
+**How the smaller ones were found:** the 25% report missed GRASIM and SIEMENS. A second scan for drops of 10–25% on days the NIFTY moved less than 1.5% found them. The scan's other hits were real news, mostly the Adani group events. ITC Hotels and Jio Financial don't need fixing: NSE ran special price-discovery sessions for those demergers, so the source already reflects them.
 
 After the fixes, every remaining move over 25% is a real event: the October 2017 PSU-bank recapitalisation rally, the March 2020 Covid crash, the 2023 Hindenburg report on Adani, the CG Power fraud (2019) and IndusInd Bank's accounting issue (2025). A new hard check fails if any one-day move exceeds ±60%, so these errors can't come back unnoticed.
 
@@ -111,3 +115,74 @@ Without Postgres running, the tests skip locally. CI sets `REQUIRE_DB=1` and run
 
 ### For phase 2
 New views must be owned by `analytics_owner` (`ALTER VIEW ... OWNER TO analytics_owner`), or RLS silently stops applying. The NAV calculation must carry the last price forward over missing days.
+
+---
+
+## Phase 2: Synthetic portfolios
+
+### The book
+There are 3 fictional managers and 7 portfolios, each with its own **mandate** (`portfolio/mandates.py`): Banking & Financials, Balanced Nifty Core, IT & Tech, Defensive FMCG & Pharma, Consumption & Auto, PSU & Energy, and Infrastructure. A mandate is a set of target weights plus a few *alternates* the manager may rotate into. Each portfolio:
+- starts on a random trading day between 2016 and 2021, with ₹1–5 Cr
+- trades on the real daily closes until 2026-04-08
+
+`SEED = 2026` makes the whole book reproducible: the same seed always gives the same trades.
+
+### What the simulator does each day (`portfolio/simulator.py`)
+1. **Forced exit:** if a stock's data ends before the dataset does (DABUR, HAVELLS, HEROMOTOCO, LICI, NHPC and BHEL end on 2026-01-22/23), sell it in full on its last day. After that we'd have no price to value it.
+2. **Cash flows:** on random days (about 1.5 a year), add a deposit of 2–10% of NAV, invested straight away, or take a withdrawal, raised by selling first.
+3. **Discretionary swap:** on the first trading day of each month, with a 15% chance, replace one holding with an alternate, which takes over its target weight.
+4. **Quarterly rebalance:** on the first trading day of each quarter, trade back to target. Only positions more than 1% of NAV off target are traded. A real manager doesn't pay fees to fix a 0.2% drift, and this keeps turnover believable: about 200–350 trades per portfolio over 5–10 years.
+
+Target weights are renormalised over whatever is listed and trading that day. So SBILIFE, a target in the banking mandate, joins at the first rebalance after it lists, and a stock missing a price on a given day simply isn't traded that day.
+
+### The rules, checked every time (`portfolio/invariants.py`)
+- cash never below zero
+- no short positions
+- whole shares only
+- every trade at that day's **actual close**, within the stock's listed dates
+- only stocks from the mandate
+- nothing held after a stock's data ends
+- one NAV row per trading day from inception
+- day-one NAV = initial cash − day-one fees
+
+The generator **refuses to write anything** if a single check fails, and the tests run the same checker. One test tampers with a trade price on purpose to prove the checker would catch it.
+
+### One accounting module for everything (`portfolio/accounting.py`)
+Positions use the **average-cost** method: buy fees go into the cost basis, and sell fees reduce realised P&L. Daily NAV = shares held × last known close (carried forward over data gaps) + cash.
+
+The generator uses this module to check its own output, and `etl/refresh_derived.py` uses the same module to fill the database. That way, what the simulator "believed" it held can't drift from what gets reported.
+
+**Timing convention:** trades happen at the close, and flows land at the end of the day, so NAV on day *t* already includes that day's flows. Phase 3's time-weighted return removes them: `r_t = (NAV_t − flow_t) / NAV_{t−1} − 1`.
+
+### Why NAV is a table, not a materialized view
+A materialized view looked like the obvious choice for "pre-computed NAV". It doesn't work here, for two reasons:
+- Postgres **can't put row-level security on a materialized view**, so every manager would see every NAV.
+- A refresh would run with no `app.manager_id` set, so under our fail-closed policy it would store **zero rows**.
+
+Instead, `core.nav_daily` and `core.positions` are plain tables with their own RLS policies. The refresh step recomputes them in Python as the admin role.
+
+Migration 004 also creates its views **as** `analytics_owner` (`SET ROLE analytics_owner`) rather than changing the owner afterwards. A new test checks that every view in `analytics` belongs to `analytics_owner`, so a future migration can't quietly break RLS.
+
+### Bugs caught by sanity-checking the output
+**Cash ran down to zero.** The first run passed every invariant, but the cash share sat at 0.00% for long stretches, though I'd meant to keep a 1% buffer. The cause was the drift band: names slightly *overweight* kept their extra value (inside the band, so not sold), while new names were bought with whatever cash was left. The fix is that buys never go below the buffer. A test now checks that cash stays between 0.5% and about 3%.
+
+**Two more unadjusted demergers** turned up when I scanned for big drops on quiet market days: GRASIM (2017) and SIEMENS (2025). They were fixed on the phase-1 branch, where they belong, and this branch was rebuilt on top. See the phase 1 notes.
+
+**Missing day in the source:** 2016-01-01 has index bars but no stock bars, although NSE was open. The NAV carries prices forward over it.
+
+### The returns look too good, and why that's expected
+| Portfolio | CAGR | Benchmark CAGR |
+|---|---|---|
+| 101 Banking (from 2021) | 11.4% | 8.9% (NIFTY BANK) |
+| 102 Balanced (from 2017) | 17.2% | 11.8% |
+| 201 Tech (from 2016) | 16.7% | 12.9% |
+| 202 Defensive (from 2019) | 19.4% | 11.6% |
+| 203 Consumption (from 2018) | 21.3% | 10.9% |
+| 301 PSU & Energy (from 2018) | 23.3% | 12.2% |
+| 302 Infrastructure (from 2016) | 19.4% | 11.8% |
+
+CAGR here is time-weighted (deposits and withdrawals removed), computed ad hoc for this check. Phase 3 adds the tested version.
+
+Every portfolio beats its benchmark, which no real fund book does. This isn't a bug. It's **survivorship bias**: the dataset contains only stocks that are in the index *today*, which are by definition the winners of the last decade. To measure it: equal-weighting the 90 current constituents that were already listed in January 2016 returns **20.5% a year against the NIFTY 50's 11.6%**. The synthetic portfolios sit inside that range.
+
+Any answer about "alpha" or "beating the benchmark" must be read in that light. The explainer (phase 5) should say so when it reports outperformance.
