@@ -99,3 +99,48 @@ def test_long_queries_are_cancelled(db_urls):
     _, agent = db_urls
     with pytest.raises(errors.QueryCanceled):
         run_as_agent(agent, "SELECT pg_sleep(5)", manager_id=1)
+
+
+@pytest.mark.parametrize(
+    "view",
+    [
+        "v_portfolios",
+        "v_portfolio_nav",
+        "v_transactions",
+        "v_cash_flows",
+        "v_positions",
+        "v_realized_pnl",
+    ],
+)
+def test_rls_isolates_every_portfolio_view(db_urls, view):
+    _, agent = db_urls
+    query = f"SELECT DISTINCT portfolio_id FROM analytics.{view} ORDER BY 1"
+    if view == "v_realized_pnl":  # nothing has been sold in the seed data
+        assert run_as_agent(agent, query, 1) == []
+        return
+    assert run_as_agent(agent, query, 1) == [(10,)]
+    assert run_as_agent(agent, query, 2) == [(20,)]
+    assert run_as_agent(agent, query) == []
+
+
+def test_every_analytics_view_is_owned_by_analytics_owner(db_urls):
+    # If the admin role owned a view, RLS would silently stop applying to it.
+    admin, _ = db_urls
+    with psycopg.connect(admin) as conn:
+        owners = conn.execute(
+            "SELECT viewname, viewowner FROM pg_views WHERE schemaname = 'analytics'"
+        ).fetchall()
+    assert owners
+    assert all(owner == "analytics_owner" for _, owner in owners), owners
+
+
+def test_positions_view_values(db_urls):
+    _, agent = db_urls
+    row = run_as_agent(
+        agent,
+        "SELECT symbol, quantity::int, market_value::float8, weight::float8"
+        " FROM analytics.v_positions",
+        1,
+    )
+    # 100 TCS at a 100.5 close, in a 1,000,000 portfolio (no fees in the seed).
+    assert row == [("TCS", 100, 10050.0, pytest.approx(10050 / 1_000_000))]

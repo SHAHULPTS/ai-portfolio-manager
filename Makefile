@@ -25,6 +25,12 @@ load: migrate
 verify-data:
 	python -m etl.verify_load
 
-data: resample load verify-data
+portfolios:
+	python -m etl.generate_portfolios
 
-.PHONY: install lint test db-up db-down migrate resample load verify-data data
+refresh:
+	python -m etl.refresh_derived
+
+data: resample load verify-data portfolios
+
+.PHONY: install lint test db-up db-down migrate resample load verify-data portfolios refresh data

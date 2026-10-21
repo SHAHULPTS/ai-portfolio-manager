@@ -15,6 +15,9 @@ dependencies = [
     # phase 1: data loading
     "duckdb>=1.1",
     "psycopg[binary]>=3.2",
+    # phase 2: portfolio simulation and accounting
+    "numpy>=1.26",
+    "pandas>=2.2",
 ]
 
 [project.optional-dependencies]
@@ -25,7 +28,7 @@ dev = [
 
 [tool.setuptools]
 py-modules = ["config"]
-packages = ["db", "etl"]
+packages = ["db", "etl", "portfolio"]
 
 [tool.ruff]
 line-length = 100
