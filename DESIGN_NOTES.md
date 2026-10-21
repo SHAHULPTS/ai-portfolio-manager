@@ -67,11 +67,15 @@ The reports turned up these problems:
 | Diwali Muhurat sessions | Evening bars (17:30–19:29) on one day each year | **Keep**: these were real trades |
 | Junk before listing | SBILIFE has prices from 2015 at ₹13 and jumps 5,259% on 2017-10-03, its listing day. HDFCLIFE, IRCTC and IRFC look the same. | Drop bars before each stock's real listing date |
 | One-day unadjusted spikes | e.g. BEL ₹34 → ₹101 → ₹33 over 2015-09-10 to 09-14. INFY, DIVISLAB, MOTHERSON and ZYDUSLIFE have the same pattern. | Drop those days |
-| Unadjusted demergers | CGPOWER −72% on 2016-03-15, ADANIENT −42% on 2015-06-03, TMPV −14% on 2025-10-14 (the Tata Motors CV demerger) | Scale all earlier prices by the ex-date price ratio |
+| Unadjusted demergers | CGPOWER −72% (2016-03-15), ADANIENT −42% (2015-06-03), SIEMENS −24% (2025-04-07, ENRIN split), GRASIM −20% (2017-07-19, Aditya Birla Capital split), TMPV −14% (2025-10-14, Tata Motors CV split) | Scale earlier prices so the ex-date move matches the NIFTY's |
 
 The listing-date, bad-day and demerger fixes are in `etl/corrections.py` as plain lists, each with a comment saying why. They are not patched into the database by hand, so `make data` always rebuilds the same clean result.
 
-**Why the demergers matter:** a portfolio holding TMPV in October 2025 would have shown a 14% loss on paper that no real investor suffered, because they received TMCV shares worth the difference. The adjustment assumes the market itself was flat on the ex-date. That is an error of about one day's market move, far smaller than the fake loss it removes.
+**Why the demergers matter:** a portfolio holding TMPV in October 2025 would have shown a 14% loss on paper that no real investor suffered, because they received TMCV shares worth the difference.
+
+**How the adjustment works:** every price before the ex-date is multiplied by `(stock_ex / stock_prev) / (nifty_ex / nifty_prev)`. The adjusted stock then moves exactly with the market on the ex-date, and the rest of the drop is put down to the demerger. My first version used the plain price ratio, which assumes the market was flat. SIEMENS's ex-date was the 2025-04-07 tariff crash (NIFTY −3.2%), and that version would have erased a real fall.
+
+**How the smaller ones were found:** the 25% report missed GRASIM and SIEMENS. A second scan for drops of 10–25% on days the NIFTY moved less than 1.5% found them. The scan's other hits were real news, mostly the Adani group events. ITC Hotels and Jio Financial don't need fixing: NSE ran special price-discovery sessions for those demergers, so the source already reflects them.
 
 After the fixes, every remaining move over 25% is a real event: the October 2017 PSU-bank recapitalisation rally, the March 2020 Covid crash, the 2023 Hindenburg report on Adani, the CG Power fraud (2019) and IndusInd Bank's accounting issue (2025). A new hard check fails if any one-day move exceeds ±60%, so these errors can't come back unnoticed.
 
