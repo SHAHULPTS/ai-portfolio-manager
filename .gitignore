@@ -1,0 +1,20 @@
+# Raw market data (5.3 GB, downloaded separately; see README)
+archive/
+data/
+*.parquet
+*.dump
+
+# Secrets
+.env
+
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
