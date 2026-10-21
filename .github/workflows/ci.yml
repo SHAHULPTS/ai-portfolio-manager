@@ -7,6 +7,25 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: pm_admin
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: portfolio
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U pm_admin"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://pm_admin:ci-only@localhost:5433/portfolio
+      AGENT_DATABASE_URL: postgresql://agent_ro:ci-agent-only@localhost:5433/portfolio
+      # DB tests skip locally when Postgres is down; in CI that would hide failures.
+      REQUIRE_DB: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

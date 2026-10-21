@@ -35,3 +35,79 @@ GitHub Actions runs `ruff check`, `ruff format --check` and `pytest` on every pu
 
 ### Secret hygiene
 Only `.env.example` is committed. A `gitleaks` pre-commit hook blocks commits that contain API keys. To enable it, run `pre-commit install`.
+
+---
+
+## Phase 1: Data foundation
+
+### From 110M minute bars to 288k daily bars
+Every metric in this project is daily: returns, volatility, drawdown, beta. Loading 110 million minute rows into Postgres would make every query slower and would add nothing. `etl/resample_to_daily.py` uses **DuckDB**, which reads all 116 CSVs in parallel and aggregates them in about 5 seconds:
+- open = the first bar's open
+- close = the last bar's close
+- high = the max of the bars' highs
+- low = the min of the bars' lows
+- volume = the sum of the bars' volumes
+
+The result is a single Parquet file. `etl/load_db.py` streams it into Postgres with `COPY`, the fastest bulk-load path.
+
+The pipeline is two steps (CSV → Parquet → Postgres), not one, so the slow part (the 5.3 GB scan) and the database part can be re-run separately.
+
+### What the data check found, and how each problem was fixed
+`etl/verify_load.py` has two parts:
+- **Hard checks** that must pass, such as the NIFTY 50 close on 2026-04-08 being exactly 24012.35.
+- **Reports** of things a human should look at: stocks with missing trading days, and one-day moves over 25%.
+
+The reports turned up these problems:
+
+| Problem | Evidence | Fix |
+|---|---|---|
+| Duplicate files | `MM_minute_new.csv` holds all of `MM_minute.csv` plus later bars (1 close differs by 0.30 in 1M overlapping bars). `LTM` has the same relationship to `LTIM`. | Skip `MM` and `LTIM` |
+| Zero-price bars | 34,649 bars with every price 0, e.g. BAJAJHLDNG on 2015-05-15 | Drop any bar with a price ≤ 0 |
+| After-close filler | HEROMOTOCO, ICICIPRULI and IRCTC have flat prices from 15:31 to 16:51 on 2026-01-22 | Drop bars between 15:31 and 16:59 |
+| Diwali Muhurat sessions | Evening bars (17:30–19:29) on one day each year | **Keep**: these were real trades |
+| Junk before listing | SBILIFE has prices from 2015 at ₹13 and jumps 5,259% on 2017-10-03, its listing day. HDFCLIFE, IRCTC and IRFC look the same. | Drop bars before each stock's real listing date |
+| One-day unadjusted spikes | e.g. BEL ₹34 → ₹101 → ₹33 over 2015-09-10 to 09-14. INFY, DIVISLAB, MOTHERSON and ZYDUSLIFE have the same pattern. | Drop those days |
+| Unadjusted demergers | CGPOWER −72% on 2016-03-15, ADANIENT −42% on 2015-06-03, TMPV −14% on 2025-10-14 (the Tata Motors CV demerger) | Scale all earlier prices by the ex-date price ratio |
+
+The listing-date, bad-day and demerger fixes are in `etl/corrections.py` as plain lists, each with a comment saying why. They are not patched into the database by hand, so `make data` always rebuilds the same clean result.
+
+**Why the demergers matter:** a portfolio holding TMPV in October 2025 would have shown a 14% loss on paper that no real investor suffered, because they received TMCV shares worth the difference. The adjustment assumes the market itself was flat on the ex-date. That is an error of about one day's market move, far smaller than the fake loss it removes.
+
+After the fixes, every remaining move over 25% is a real event: the October 2017 PSU-bank recapitalisation rally, the March 2020 Covid crash, the 2023 Hindenburg report on Adani, the CG Power fraud (2019) and IndusInd Bank's accounting issue (2025). A new hard check fails if any one-day move exceeds ±60%, so these errors can't come back unnoticed.
+
+**Still known:** prices are adjusted for splits and bonuses but not dividends, so all returns are *price returns*. INFY, ITC and ICICIBANK have about 13 missing days in early 2015 (zero-filled in the source). Phase 2 carries the last price forward over gaps like these.
+
+### The database guardrail design (layer 1)
+
+**Two schemas.** `core` holds the base tables. `analytics` holds views, the only objects the agent can query. Each view and column has a SQL `COMMENT`. Phase 4 builds the SQL-writer prompt from these comments, so the documentation and the prompt can't drift apart.
+
+**Three roles:**
+- `pm_admin` owns the tables and runs the ETL and migrations.
+- `analytics_owner` (cannot log in) owns the views.
+- `agent_ro` (can log in) reads the views and nothing else.
+
+**Why the views need their own owner.** I nearly missed this one. A Postgres view runs with its *owner's* rights. Row-level security never applies to superusers or to a table's owner. If `pm_admin` owned the views, every manager would see every portfolio, and nothing would warn you. Because `analytics_owner` is neither a superuser nor a table owner, RLS applies whenever its views read the tables. The tests check this.
+
+**Row-level security.** Each policy compares `manager_id` with the session setting `app.manager_id`. The app sets it for each transaction (`SET LOCAL`). If it isn't set, `NULLIF(..., '')` turns the comparison into `NULL` and no rows come back: the policy *fails closed*. `transactions` and `cash_flows` inherit the check through a subquery on `portfolios`, which is itself filtered by RLS.
+
+**A hole found while writing the tests.** `set_config()` is an ordinary function, so a single `SELECT` could change the setting partway through a query:
+```sql
+WITH x AS (SELECT set_config('app.manager_id','2',false)) SELECT * FROM x, analytics.v_portfolios
+```
+That would read another manager's portfolios. Migration 003 revokes `set_config` from everyone except superusers. The app sets the manager with the `SET` command instead, which is a separate statement. Phase 4's executor only ever sends one `SELECT`, so the LLM can't issue one. `test_query_cannot_switch_manager_with_set_config` keeps this hole closed.
+
+**Grants are the wall; read-only mode is a backstop.** `agent_ro` also has the role defaults `default_transaction_read_only = on` and `statement_timeout = 3s`. Any session can override those with `SET`, so they are not the security boundary: the missing write privileges are. `test_grants_hold_even_if_read_only_mode_is_switched_off` proves it.
+
+**Secrets.** The `agent_ro` password is never written in SQL. `db/migrate.py` reads it from `AGENT_DATABASE_URL` and sets it with a safely quoted literal.
+
+### Testing against a real Postgres
+The guardrail tests run against a real Postgres, not a mock, because what's being tested is the database's own behaviour. `tests/conftest.py` creates a throwaway `portfolio_test` database, runs the migrations, adds two managers with one portfolio each, and drops it all at the end.
+
+Without Postgres running, the tests skip locally. CI sets `REQUIRE_DB=1` and runs a Postgres service container, so a skip there is a failure.
+
+### Small things that bit
+- **DuckDB 2.0** removed `fetchone()` and `fetchmany()` on relations, because a relation re-runs its query on every call. The code uses `con.execute(...)` instead, which works on 1.x and 2.x.
+- **DuckDB's `sum(BIGINT)` returns a 128-bit integer.** It reached Postgres as `75469.0` and was rejected. The fix is a cast to `BIGINT`. The failed load left nothing half-done, because the whole load runs in one transaction.
+
+### For phase 2
+New views must be owned by `analytics_owner` (`ALTER VIEW ... OWNER TO analytics_owner`), or RLS silently stops applying. The NAV calculation must carry the last price forward over missing days.

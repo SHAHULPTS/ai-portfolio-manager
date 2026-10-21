@@ -33,11 +33,14 @@ Python 3.12, LangGraph, Claude (Haiku for routing and guards, Sonnet for SQL and
 ```bash
 cp .env.example .env        # then fill in values
 make install                # uv venv + editable install with dev tools
-make test
 make db-up                  # Postgres on localhost:5433
+make data                   # archive/ -> daily Parquet -> Postgres, then sanity checks
+make test                   # includes database guardrail tests (needs Postgres up)
 ```
 
 ## Data
+`make data` turns about 110M minute bars into about 288k daily bars for 114 stocks and 2 indices (2015–2026). It drops zero-price bars and pre-listing junk, and adjusts three demergers the source missed; see [DESIGN_NOTES.md](DESIGN_NOTES.md#phase-1-data-foundation). Sectors come from a hand-built map in `etl/securities.csv`.
+
 The raw data is 1-minute OHLCV bars for each stock plus the NIFTY 50 and NIFTY BANK indices. It is not committed because of its size (5.3 GB). Download it into `archive/` (one `<SYMBOL>_minute.csv` per stock). Source: _TODO: add dataset link_.
 
 ## Design notes
