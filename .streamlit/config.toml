@@ -1,0 +1,16 @@
+[theme]
+base = "light"
+primaryColor = "#0F5C63"            # ledger teal: links, focus, buttons
+backgroundColor = "#F6F7F5"         # cool paper
+secondaryBackgroundColor = "#E8ECE9" # sidebar, code, inputs
+textColor = "#16232B"               # ink
+font = "sans serif"
+
+[server]
+headless = true
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
