@@ -33,4 +33,7 @@ refresh:
 
 data: resample load verify-data portfolios
 
-.PHONY: install lint test db-up db-down migrate resample load verify-data portfolios refresh data
+ui:
+	streamlit run app/streamlit_app.py
+
+.PHONY: install lint test db-up db-down migrate resample load verify-data portfolios refresh data ui

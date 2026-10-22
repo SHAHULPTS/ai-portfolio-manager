@@ -25,6 +25,9 @@ dependencies = [
     # phase 5: orchestration and conversation memory
     "langgraph>=1.2",
     "langgraph-checkpoint-postgres>=3.0",
+    # phase 6: web UI
+    "streamlit>=1.50",  # width="stretch" replaces use_container_width
+    "altair>=5",
 ]
 
 [project.optional-dependencies]
@@ -37,7 +40,7 @@ dev = [
 
 [tool.setuptools]
 py-modules = ["config"]
-packages = ["agent", "agent.sql", "db", "etl", "metrics", "portfolio"]
+packages = ["agent", "agent.sql", "app", "db", "etl", "metrics", "portfolio"]
 
 [tool.ruff]
 line-length = 100

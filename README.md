@@ -60,8 +60,11 @@ LangGraph wires three Claude models around the tested metric engine:
 Every number in that answer is checked against the computed results before you see it. Conversations are kept in Postgres, under a role that can't read portfolio data, so follow-ups like "and how risky has it been?" work.
 
 ```bash
-python -m agent.cli --manager 2 --trace
+make ui                               # web app at http://localhost:8501
+python -m agent.cli --manager 2       # or chat in the terminal
 ```
+
+In the web app, pick a manager under "Signed in as". Each answer ends with a receipt line, such as "3 metrics computed for portfolio 201. All 6 figures checked against the computed results". Under it, **How this was answered** opens the evidence: the numbers with their formulas and periods, the SQL that ran (and any drafts the guard rejected), the plan, and the step-by-step trace.
 
 ## Guardrails
 A question that needs raw data goes through LLM-written SQL. Three layers stand between that SQL and the database:

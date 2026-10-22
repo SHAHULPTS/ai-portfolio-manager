@@ -369,3 +369,54 @@ Try it:
 ```bash
 python -m agent.cli --manager 2 --trace
 ```
+
+---
+
+## Phase 6: Streamlit UI
+
+### What the page has to do
+A portfolio manager asks a question, then needs to **trust** the answer. So the design spends its one bold element on the evidence, not on decoration. Every answer is followed by a single teal "receipt" line, for example:
+
+> 3 metrics computed for portfolio 201. All 6 figures checked against the computed results.
+
+Under it, **How this was answered** opens into the evidence itself:
+- **Numbers:** each metric with its value, period and formula, plus its full table.
+- **SQL:** the query that ran, its rows, and any drafts the guard rejected, with the reason.
+- **Plan:** the planner's routing.
+- **Steps:** the node-by-node trace.
+
+A refusal says "Answered with a fixed reply: no data was read." If the output guard had to fall back to the plain summary, the receipt says so rather than hiding it.
+
+### Visual choices, and the defaults I avoided
+- **Palette:** cool paper (`#F6F7F5`), ink (`#16232B`), ledger teal (`#0F5C63`) for links, focus and the receipt, and green and red for gains and losses in charts. I steered away from the cream-and-terracotta and black-and-neon looks that generated UIs tend to default to.
+- **Type:** answers are set in **Source Serif 4** with tabular figures, so they read as prose and numbers line up. The UI stays in Streamlit's Source Sans. That's two clearly distinct faces from one family, rather than a third font.
+- **Restraint:** one chart per answer at most, chosen by what the answer *is*: P&L by stock, sector weights, holdings, monthly returns, a comparison across portfolios, or a time series from SQL rows. A single number gets no chart. There's no decorative motion and no card grid.
+- **Copy:** plain and specific. "Signed in as", "Your portfolios", "Try asking", "Start a new conversation". Errors name the cause ("The agent stopped with an error (…). Try again or rephrase.") and the missing-key message says exactly what to do.
+
+### How it's built
+- `app/streamlit_app.py` is a thin shell around `agent.app.Agent`. The manager picker stands in for sign-in: whoever is "signed in" is the `manager_id` every query runs under, so **RLS, not the page, decides what's visible**. Switching manager starts a new conversation thread.
+- The agent is created once per server process with `st.cache_resource`, which keeps its Postgres memory connection open. Each browser session has its own `thread_id`.
+- `app/views.py` holds the pure helpers (receipt text, metrics table, chart choice), so they're unit-tested without a browser.
+- The theme is in `.streamlit/config.toml`, plus a little scoped CSS. Streamlit's own toolbar is reduced to minimal.
+
+### Bugs found by running it in a browser
+1. **The empty-state heading stayed above the first answer.** The script drew it before handling the new question, so the conversation still looked empty on that run.
+2. **The spinner appeared at the top of the page,** and the question only showed up once the answer arrived. The page now draws history first, shows the new question and an inline spinner where the answer will go, and reruns.
+3. **No chart for questions spanning several portfolios** when the metric was in rupees (P&L). The comparison chart only handled % and ratios. Its title also said "P&L by stock" over what were portfolio totals; it now says "Total P&L by portfolio (INR)".
+4. **Portfolio names were cut off** on chart axes ("Ravi Consumer Tr…"), and there were too many ticks.
+5. **The answer serif leaked** into the disclaimer and the evidence panel label, because my answer rule was more specific than theirs. The fix is to scope the serif to the answer text only.
+6. **Wrong font name:** I named the UI face "Source Sans 3", but Streamlit loads it as "Source Sans", so the browser fell back to a system font. I found this by checking the computed styles.
+7. **Deprecation warnings** filled the server log: `use_container_width` is being removed. It's now `width="stretch"`, with the minimum Streamlit version raised to 1.50.
+
+### Tests (`tests/test_ui.py`)
+- **View helpers:** receipt wording (metrics, SQL retries, fallback, refusals), the metrics table (errors shown, table-only metrics skipped), and chart choice.
+- **The real page script**, run headless with Streamlit's `AppTest` and a fake agent. It covers the empty state and sidebar, asking (answer, receipt, heading gone), clarify (the placeholder changes, and the next message resumes), agent errors shown rather than raised, and the missing-key message.
+- **A caching pitfall** found while writing these: `st.cache_resource` outlives a single test run. An agent cached by one test answered the next test's questions until the fixture cleared Streamlit's caches.
+
+### Not done here
+- **README screenshot or GIF:** the browser pane caps screenshots at about 640 px, which is too small for a README. I'll capture it at full resolution in phase 7.
+
+Run it:
+```bash
+make ui   # streamlit run app/streamlit_app.py
+```
