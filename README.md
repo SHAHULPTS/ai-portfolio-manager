@@ -1,91 +1,130 @@
 # AI Portfolio Manager
 
-Ask questions about a stock portfolio in plain English, for example "What's my Sharpe ratio since inception vs NIFTY 50?" or "Which sector am I most exposed to?", and get an answer you can check.
+Ask about a stock portfolio in plain English and get an answer you can check.
 
-A LangGraph agent splits each question into three jobs:
+> "How has my tech fund done against its benchmark since inception?"
+> "Which stocks made it the most money over the last year?"
+> "Show my withdrawals in 2025."
 
-1. **Understand it.** A planner LLM turns the question into a structured plan: the intent, which stocks, which period and which metrics.
-2. **Get the numbers.**
-   - Lookups ("show my TCS trades") go through LLM-written SQL behind layered guardrails: a read-only role, row-level security, AST validation, timeouts and row limits.
-   - Metrics (Sharpe, drawdown, beta, VaR …) come from unit-tested Python formulas. They never come from LLM-written SQL.
-3. **Explain them.** An explainer LLM writes the answer in plain English. An output check rejects any number that isn't in the computed results.
+A LangGraph agent routes each question to **tested metric formulas** or to **guarded, LLM-written SQL**, then has Claude explain the results. **Every number in the answer is checked against what was actually computed** before the manager sees it. The portfolios are synthetic, trading on real NSE prices from 2015 to 2026.
 
-The portfolios are synthetic, built on real NSE prices for roughly the NIFTY 100 from 2015 to 2026.
+![The portfolio desk: an answer with its receipt line and a P&L chart](docs/screenshot.png)
 
-> **Status: in progress.** Each build phase lives on its own branch and is merged by its own PR.
+## Results
+These are from 41 golden questions and 16 red-team attacks, run against the live agent with real Claude models and the real database ([full report](evals/results/latest.md)):
 
-| Phase | Branch | What it adds |
-|---|---|---|
-| 0 | `main` | Project skeleton, config, CI |
-| 1 | `phase-1-data` | Postgres schema, daily price load, roles and RLS |
-| 2 | `phase-2-portfolios` | Synthetic portfolio generator and NAV |
-| 3 | `phase-3-metrics` | Metric formulas and tests |
-| 4 | `phase-4-sql-guard` | Text-to-SQL with guardrails |
-| 5 | `phase-5-agent` | LangGraph orchestration |
-| 6 | `phase-6-ui` | Streamlit chat |
-| 7 | `phase-7-evals` | Golden and red-team evals |
+| Measure | Result |
+|---|---|
+| Golden questions fully correct | **41/41** |
+| Routing: the right kind of answer (metric, lookup, both, clarify, refusal) | 41/41 |
+| Metric values equal the engine's and are stated in the answer | 19/19 |
+| SQL execution accuracy (rows match a hand-written query) | 14/14 |
+| Answers that passed the number check with no fallback | 34/34 |
+| Red-team attacks with **no data leaked** | **16/16** |
+| Database unchanged after the run | yes |
+| Latency per question, median / p95 | 4.2 s / 7.5 s |
+| Cost of the whole run (57 questions) | $0.22 |
 
-## Stack
-Python 3.12, LangGraph, Claude (Haiku for routing and guards, Sonnet for SQL and explanations), PostgreSQL 16, Streamlit.
+This is the third full run. The first two scored 40/41, and the failures were worth more than the score:
+- **Run 1:** a test question was ambiguous. The agent's reading was fair, so the case now accepts both readings.
+- **Run 2:** the output guard rejected a number the explainer had worked out itself ("1 day in 20" for 95% VaR). That number is now computed and checked.
 
-## Quickstart (so far)
+One attack in the final run also showed the server-side refusal fallback working live. The single-run and small-sample caveats are in [Limitations](#limitations-stated-up-front); the full story is in [DESIGN_NOTES.md](DESIGN_NOTES.md#phase-7-evals-demo-mode-and-the-final-readme).
 
-```bash
-cp .env.example .env        # then fill in values
-make install                # uv venv + editable install with dev tools
-make db-up                  # Postgres on localhost:5433
-make data                   # archive/ -> daily prices -> synthetic portfolios, with checks
-make test                   # includes database guardrail tests (needs Postgres up)
+## How it works
+
+```mermaid
+flowchart LR
+    Q([Question]) --> IG[Input guard]
+    IG -->|SQL statement| R[Fixed reply]
+    IG --> P["Planner<br/>Claude Haiku 5.5"]
+    P -->|metric| M["Metric engine<br/>27 tested formulas"]
+    P -->|data lookup| W["SQL writer<br/>Claude Sonnet 5.5"]
+    P -->|both| M & W
+    P -->|unclear| C[Clarify:<br/>pause and ask]
+    C --> P
+    P -->|advice, other managers,<br/>writes, off-topic| R
+    W --> G[AST guard<br/>sqlglot] --> X[Executor<br/>read-only role + RLS]
+    M --> E["Explainer<br/>Claude Sonnet 5.5"]
+    X --> E
+    E --> OG[Output guard:<br/>every number checked] --> A([Answer + receipt])
 ```
 
-## Data
-`make data` turns about 110M minute bars into about 288k daily bars for 114 stocks and 2 indices (2015–2026). It drops zero-price bars and pre-listing junk, and adjusts three demergers the source missed; see [DESIGN_NOTES.md](DESIGN_NOTES.md#phase-1-data-foundation). Sectors come from a hand-built map in `etl/securities.csv`.
+- **The planner** decides what is being asked. Its structured output can only name metrics that exist in the catalogue. It understands follow-ups ("and how risky has it been?"), covers all of a manager's portfolios when none is named, and asks back once if a question really is ambiguous.
+- **The metric engine** computes returns, risk, risk-adjusted ratios, benchmark comparisons and holdings analytics as plain Python. It's time-weighted (deposits aren't gains), works for any period, and agrees with the `empyrical` library to 1e-9. The LLMs never do arithmetic.
+- **The SQL writer** handles raw lookups: trades, cash flows, prices on a date. It sees the live schema with descriptions and 12 worked examples, and retries with the exact error when the guard or the database rejects a draft.
+- **The explainer** writes the answer from the results only. The output guard verifies every figure, allowing for %, lakh/crore and rounding. An unverifiable draft is rewritten once, then replaced by a plain summary.
+- **Memory:** conversations are kept in Postgres under their own role, which can't read portfolio data, and each conversation belongs to the manager who started it.
 
-The raw data is 1-minute OHLCV bars for each stock plus the NIFTY 50 and NIFTY BANK indices. It is not committed because of its size (5.3 GB). Download it into `archive/` (one `<SYMBOL>_minute.csv` per stock). Source: _TODO: add dataset link_.
+Every answer opens into its evidence: the metrics with their formulas and periods, the SQL that ran (and any drafts the guard rejected), the plan, and the step-by-step trace.
 
-## The synthetic book
-There are 3 fictional managers and 7 portfolios (Banking, Balanced, Tech, Defensive, Consumption, PSU & Energy, Infrastructure). Each one trades real NSE closes from a random start in 2016–2021 until April 2026. The simulation covers quarterly rebalancing within a drift band, discretionary swaps, deposits and withdrawals, forced exits when a stock's data ends, and 0.03% fees. The generator is seeded, so every rebuild gives the same book, and it refuses to write anything that breaks an invariant (negative cash, shorts, trades off the closing price …).
-
-## Metrics
-There are 27 named metrics in `metrics/catalog.py`: returns (total, CAGR, monthly, vs benchmark), risk (volatility, max drawdown with dates, downside deviation, VaR, CVaR), risk-adjusted (Sharpe, Sortino, Calmar), relative (beta, alpha, tracking error, information ratio, correlation) and holdings (positions, sector allocation, concentration, realised and unrealised P&L, P&L by stock, correlation matrix, risk contribution).
-
-They are time-weighted, so deposits and withdrawals aren't counted as returns, and they work for any period ("YTD", "3y", explicit dates). They agree with the `empyrical` library to 1e-9. Each result carries its formula and assumptions, so the explanation can state them.
-
-## The agent
-LangGraph wires three Claude models around the tested metric engine:
-- A **planner** (Haiku 5.5) routes each question to metrics, a SQL lookup, both in parallel, a clarifying question (which pauses the graph and resumes on your reply), or a fixed out-of-scope reply.
-- The **SQL writer** (Sonnet 5.5) fetches raw facts.
-- An **explainer** (Sonnet 5.5) turns the results into an answer.
-
-Every number in that answer is checked against the computed results before you see it. Conversations are kept in Postgres, under a role that can't read portfolio data, so follow-ups like "and how risky has it been?" work.
-
-```bash
-make ui                               # web app at http://localhost:8501
-python -m agent.cli --manager 2       # or chat in the terminal
-```
-
-In the web app, pick a manager under "Signed in as". Each answer ends with a receipt line, such as "3 metrics computed for portfolio 201. All 6 figures checked against the computed results". Under it, **How this was answered** opens the evidence: the numbers with their formulas and periods, the SQL that ran (and any drafts the guard rejected), the plan, and the step-by-step trace.
+![An answer's evidence panel: each metric's value, period and formula](docs/evidence.png)
 
 ## Guardrails
-A question that needs raw data goes through LLM-written SQL. Three layers stand between that SQL and the database:
-1. **The database itself.** A read-only role sees only curated views. Row-level security limits every query to the signed-in manager, there's a statement timeout, and `set_config` is revoked so a query can't switch managers.
-2. **An AST guard (sqlglot).** It allows a single SELECT over the allowed views, with known columns only, no dangerous functions and a forced LIMIT.
-3. **The executor.** It uses prepared statements (no stacked commands), refuses expensive plans after an EXPLAIN check, and caps the rows returned.
+The SQL is written by an LLM, so the design assumes the model can be fooled and makes that not matter:
 
-34 attack queries are tested against the guard, and the database layer is tested again with the guard bypassed. A test also shows that a prompt injection which fully fools the model still can't read another manager's data. In a live run, Claude answered 5 of 8 sample questions correctly on the first try and correctly declined the other 3: a metric question, a prompt injection and a `DROP TABLE`.
+| Layer | What it enforces |
+|---|---|
+| **Database** | The agent's role can only `SELECT` from curated views. Row-level security limits every row to the signed-in manager and fails closed when none is set. `set_config` is revoked, so no query can switch managers. Statement timeout. |
+| **AST guard** | Exactly one read-only statement. Allowed views and real columns only. No `pg_*`, `dblink`, sequences or XML exfiltration. No recursive CTEs. LIMIT is forced. |
+| **Executor** | Prepared statements, so stacked commands are impossible. An `EXPLAIN` cost ceiling. Row cap. Sanitised errors. |
+| **LLM input and output** | SQL statements typed as questions never reach a model. Advice, other managers' data and write requests get fixed replies. Every number in an answer is verified. |
 
-Try it (needs `ANTHROPIC_API_KEY` in `.env`):
+There are 34 attack queries in the unit tests, and the database layer is re-tested with the guard bypassed. One test shows the key property: **a prompt injection that fully fools the model still returns only the signed-in manager's rows**, because the database, not the model, enforces access.
+
+## Quickstart
+You need Python 3.12, Docker, and an Anthropic API key.
+
 ```bash
-python -m agent.sql.cli "Which of my holdings are showing a loss?" --manager 2
+cp .env.example .env          # set ANTHROPIC_API_KEY and the database passwords
+make install                  # virtualenv + editable install with dev tools
+make db-up                    # Postgres 16 on localhost:5433
+make data                     # archive/ -> daily prices -> synthetic portfolios, with checks
+make ui                       # http://localhost:8501   (?demo=1 shows a recorded conversation)
 ```
 
-## Limitations, stated up front
-- **Survivorship bias.** The universe is today's index members, so every portfolio beats its benchmark. Equal-weighting those stocks from 2016 returns 20.5% a year against the NIFTY's 11.6%. That is the bias, not skill.
-- **Price returns only.** Dividends aren't in the data.
-- **The portfolios are synthetic.** They trade like a disciplined manager would, but they are not real funds.
+Other entry points:
+```bash
+python -m agent.cli --manager 2 --trace     # chat in the terminal
+make test                                   # 220+ tests; needs Postgres up
+python -m evals.run_evals                   # live evals (about $0.25 per full run)
+```
 
-## Design notes
-[DESIGN_NOTES.md](DESIGN_NOTES.md) explains why each decision was made, phase by phase.
+**Data:** 1-minute OHLCV bars for about 115 NSE stocks plus the NIFTY 50 and NIFTY BANK indices (5.3 GB; not committed). Put the CSVs in `archive/`, one `<SYMBOL>_minute.csv` per stock. `make data` resamples them to about 288k daily bars. It drops zero-price and pre-listing junk, and adjusts five demergers the source missed.
+
+## What's in the repo
+```
+db/migrations/   schema, curated views, roles, row-level security, memory role
+etl/             resample, load, data checks and corrections, synthetic book generator
+portfolio/       simulator, accounting (positions, NAV), invariants, mandates
+metrics/         formulas, catalogue of 27 metrics, period handling, RLS-scoped loaders
+agent/           LangGraph graph, planner, explainer, input/output guards
+agent/sql/       schema context, SQL writer, AST guard, executor, worked examples
+app/             Streamlit page and view helpers
+evals/           golden and red-team cases, scorers, runner, latest results
+tests/           unit, database, graph (with scripted LLMs) and UI tests
+```
+
+## How it was built
+Each phase was built on its own branch and merged by its own PR, in order. [DESIGN_NOTES.md](DESIGN_NOTES.md) records the reasoning behind each decision, phase by phase, including the bugs found along the way.
+
+| Phase | What it added |
+|---|---|
+| 0 | Skeleton, config, CI |
+| 1 | Postgres schema, daily price load, data corrections, roles and RLS |
+| 2 | Synthetic portfolio simulator, accounting, NAV |
+| 3 | Metric engine and its tests |
+| 4 | SQL writer, AST guard, guarded executor |
+| 5 | LangGraph agent, planner, explainer, output guard, memory |
+| 6 | Streamlit UI |
+| 7 | Evals, demo mode, this README |
+
+## Limitations, stated up front
+- **Survivorship bias.** The universe is today's index members, so every portfolio beats its benchmark. Equal-weighting those stocks from 2016 returns 20.5% a year against the NIFTY's 11.6%. That's the bias, not skill, and answers say so when they report outperformance.
+- **Price returns only.** Dividends aren't in the data, for the portfolios or the benchmarks.
+- **Synthetic portfolios.** They trade like a disciplined manager would, but they aren't real funds.
+- **The evals are small.** 57 cases show the system works and where it's weak; they aren't a benchmark. The questions were written by the person who built the system.
+- **The sign-in is a picker.** "Signed in as" stands in for authentication. Access control itself is real: it's enforced by the database.
 
 ## Licence
 MIT

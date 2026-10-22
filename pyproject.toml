@@ -36,11 +36,13 @@ dev = [
     "ruff>=0.6",
     # independent reference implementation the metric formulas are checked against
     "empyrical-reloaded>=0.5.10",
+    # eval case files
+    "pyyaml>=6.0",
 ]
 
 [tool.setuptools]
 py-modules = ["config"]
-packages = ["agent", "agent.sql", "app", "db", "etl", "metrics", "portfolio"]
+packages = ["agent", "agent.sql", "app", "db", "etl", "evals", "metrics", "portfolio"]
 
 [tool.ruff]
 line-length = 100

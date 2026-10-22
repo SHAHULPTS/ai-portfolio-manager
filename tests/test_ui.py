@@ -10,7 +10,7 @@ import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 from agent.output_guard import DISCLAIMER
-from app.views import chart_for, metrics_table, receipt
+from app.views import chart_for, metrics_table, pretty, receipt
 
 PAGE = str(Path(__file__).parents[1] / "app" / "streamlit_app.py")
 
@@ -86,13 +86,13 @@ def test_chart_choice():
     pnl = [{"symbol": "A", "pnl": 10.0}, {"symbol": "B", "pnl": -5.0}]
     assert (
         chart_title(chart_for(answered([metric("pnl_contribution", unit="INR", table=pnl)])))
-        == "P&L by stock (INR)"
+        == "P&L by stock (₹ lakh)"
     )
     across = [
         metric("pnl_contribution", pid=1, unit="INR", value=5.0),
         metric("pnl_contribution", pid=2, unit="INR", value=-3.0),
     ]
-    assert chart_title(chart_for(answered(across))) == "Total P&L by portfolio (INR)"
+    assert chart_title(chart_for(answered(across))) == "Total P&L by portfolio (₹ lakh)"
     assert chart_for(answered([metric()])) is None  # a single number needs no chart
 
 
@@ -197,3 +197,8 @@ def test_missing_api_key_is_explained(monkeypatch):
     at = AppTest.from_file(PAGE, default_timeout=30)
     at.run()
     assert "ANTHROPIC_API_KEY" in at.error[0].value
+
+
+def test_pretty_formats_numbers_only():
+    html = pretty([{"symbol": "TCS", "pnl": -1924291.11, "quantity": 5844.0}]).to_html()
+    assert "-1,924,291.11" in html and "5,844.00" in html and "TCS" in html

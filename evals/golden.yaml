@@ -1,0 +1,331 @@
+# Golden questions for the agent. Managers: 1 Asha (101 Financials, 102 Core Equity),
+# 2 Ravi (201 Tech, 202 Defensive, 203 Consumer Trends), 3 Priya (301 PSU & Energy,
+# 302 Infrastructure). Data ends 2026-04-08.
+#
+# Fields:
+#   intents: accepted intents (any one passes)
+#   reason: required out_of_scope_reason
+#   metrics: required metric names (all must be chosen); any_metric: at least one of these
+#   portfolios: required portfolio_ids ([] = all of the manager's portfolios)
+#   period / start / end: required period
+#   sql: a correct query; the agent's rows must contain the same values (column names ignored)
+#   turns: earlier questions in the same conversation (follow-up cases)
+
+# --- metric questions ---------------------------------------------------------------------
+- id: m01-cagr
+  manager: 1
+  question: What's the CAGR of my financials fund since inception?
+  intents: [metric]
+  metrics: [cagr]
+  portfolios: [101]
+  period: since_inception
+
+- id: m02-volatility-3y
+  manager: 1
+  question: How volatile has Asha Core Equity been over the last 3 years?
+  intents: [metric]
+  metrics: [volatility]
+  portfolios: [102]
+  period: 3y
+
+- id: m03-drawdown
+  manager: 1
+  question: What was the worst drawdown in my financials fund?
+  intents: [metric]
+  metrics: [max_drawdown]
+  portfolios: [101]
+
+- id: m04-beta
+  manager: 1
+  question: What's the beta of my core equity portfolio against the NIFTY 50?
+  intents: [metric]
+  metrics: [beta]
+  portfolios: [102]
+
+- id: m05-sharpe-ytd
+  manager: 2
+  question: What's the Sharpe ratio of the defensive fund this year?
+  intents: [metric]
+  metrics: [sharpe_ratio]
+  portfolios: [202]
+  period: ytd
+
+- id: m06-sortino-all-5y
+  manager: 2
+  question: Which of my portfolios has the highest Sortino ratio over 5 years?
+  intents: [metric]
+  metrics: [sortino_ratio]
+  portfolios: []
+  period: 5y
+
+- id: m07-concentration
+  manager: 2
+  question: How concentrated is my tech fund?
+  intents: [metric]
+  metrics: [concentration]
+  portfolios: [201]
+
+- id: m08-sectors
+  manager: 2
+  question: What's the sector allocation of Consumer Trends?
+  intents: [metric]
+  metrics: [sector_allocation]
+  portfolios: [203]
+
+- id: m09-unrealized
+  manager: 2
+  question: How much unrealised profit do I have in the defensive fund?
+  intents: [metric]
+  metrics: [unrealized_pnl]
+  portfolios: [202]
+
+- id: m10-var
+  manager: 3
+  question: What's the one-day value at risk of my PSU portfolio?
+  intents: [metric]
+  any_metric: [var_historical, var_parametric, cvar]
+  portfolios: [301]
+
+- id: m11-vs-benchmark-1y
+  manager: 3
+  question: Did my infrastructure portfolio beat its benchmark over the last year?
+  intents: [metric]
+  metrics: [excess_return]
+  portfolios: [302]
+  period: 1y
+
+- id: m12-total-return-all
+  manager: 3
+  question: What's the total return of each of my portfolios since inception?
+  intents: [metric]
+  metrics: [total_return]
+  portfolios: []
+  period: since_inception
+
+- id: m13-contribution-6m
+  manager: 3
+  question: Which stocks contributed most to my PSU fund's returns over the last 6 months?
+  intents: [metric]
+  metrics: [pnl_contribution]
+  portfolios: [301]
+  period: 6m
+
+- id: m14-realized
+  manager: 1
+  question: How much profit have I realised so far in the financials fund?
+  intents: [metric]
+  metrics: [realized_pnl]
+  portfolios: [101]
+
+- id: m15-tracking-error
+  manager: 2
+  question: What's the tracking error of my tech fund versus the NIFTY 50 over 3 years?
+  intents: [metric]
+  metrics: [tracking_error]
+  portfolios: [201]
+  period: 3y
+
+- id: m16-correlation
+  manager: 3
+  question: How correlated are the holdings in my infrastructure portfolio?
+  intents: [metric]
+  metrics: [correlation_matrix]
+  portfolios: [302]
+
+- id: m17-monthly-2025
+  manager: 1
+  question: Show the monthly returns of Asha Core Equity in 2025.
+  intents: [metric]
+  metrics: [monthly_returns]
+  portfolios: [102]
+  period: custom
+  start: "2025-01-01"
+  end: "2025-12-31"
+
+- id: m18-worth
+  manager: 2
+  question: What's my tech fund worth right now?
+  intents: [metric, data_lookup]
+  any_metric: [market_value]
+  portfolios: [201]
+
+# --- data lookups -------------------------------------------------------------------------
+- id: d01-wipro-trades
+  manager: 2
+  question: List my trades in WIPRO during 2025.
+  intents: [data_lookup]
+  sql: |
+    SELECT portfolio_id, trade_date, side, quantity, price FROM analytics.v_transactions
+    WHERE symbol = 'WIPRO' AND trade_date BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'
+
+- id: d02-trade-counts
+  manager: 1
+  question: How many trades has each of my portfolios made in total?
+  intents: [data_lookup]
+  sql: SELECT portfolio_id, count(*) FROM analytics.v_transactions GROUP BY portfolio_id
+
+- id: d03-deposits
+  manager: 3
+  question: Show all deposits into my infrastructure portfolio.
+  intents: [data_lookup]
+  sql: |
+    SELECT date, amount FROM analytics.v_cash_flows
+    WHERE portfolio_id = 302 AND type = 'DEPOSIT'
+
+- id: d04-price-on-date
+  manager: 1
+  question: What did HDFCBANK close at on 2024-12-31?
+  intents: [data_lookup]
+  sql: SELECT close FROM analytics.v_prices WHERE symbol = 'HDFCBANK' AND date = DATE '2024-12-31'
+
+- id: d05-shared-stocks
+  manager: 2
+  question: Which stocks do I hold in more than one portfolio?
+  intents: [data_lookup]
+  sql: |
+    SELECT symbol FROM analytics.v_positions GROUP BY symbol
+    HAVING count(DISTINCT portfolio_id) > 1
+
+- id: d06-nav-on-date
+  manager: 3
+  question: What was the NAV of my PSU fund at the end of 2022?
+  intents: [data_lookup, metric]
+  sql: |
+    SELECT nav FROM analytics.v_portfolio_nav
+    WHERE portfolio_id = 301 AND date <= DATE '2022-12-31' ORDER BY date DESC LIMIT 1
+
+- id: d07-fees
+  manager: 1
+  question: How much have I paid in trading fees in total, per portfolio?
+  intents: [data_lookup]
+  sql: SELECT portfolio_id, sum(fees) FROM analytics.v_transactions GROUP BY portfolio_id
+
+- id: d08-first-buy
+  manager: 2
+  question: When did I first buy ETERNAL, and in which portfolio?
+  intents: [data_lookup]
+  sql: |
+    SELECT portfolio_id, min(trade_date) FROM analytics.v_transactions
+    WHERE symbol = 'ETERNAL' AND side = 'BUY' GROUP BY portfolio_id
+
+- id: d09-power-holdings
+  manager: 3
+  question: List my current holdings in the Power sector with their market value.
+  intents: [data_lookup, metric]
+  sql: |
+    SELECT portfolio_id, symbol, market_value FROM analytics.v_positions
+    WHERE sector = 'Power'
+
+- id: d10-largest-withdrawal
+  manager: 1
+  question: What's the largest single withdrawal I've made?
+  intents: [data_lookup]
+  sql: |
+    SELECT portfolio_id, date, amount FROM analytics.v_cash_flows
+    WHERE type = 'WITHDRAWAL' ORDER BY amount ASC LIMIT 1
+
+- id: d11-realized-losses
+  manager: 2
+  question: Which stocks have I sold at a loss overall, by realised P&L?
+  intents: [data_lookup, metric]
+  # "Overall" is ambiguous: per portfolio, or summed across portfolios. The first eval run
+  # failed this case because the agent summed (and said so in its answer); both readings
+  # are accepted now. See DESIGN_NOTES.md, phase 7.
+  sql:
+    - |
+      SELECT portfolio_id, symbol, realized_pnl FROM analytics.v_realized_pnl
+      WHERE realized_pnl < 0
+    - |
+      SELECT symbol, sum(realized_pnl) FROM analytics.v_realized_pnl
+      GROUP BY symbol HAVING sum(realized_pnl) < 0
+
+- id: d12-shares-held
+  manager: 3
+  question: How many shares of NTPC do I hold?
+  intents: [data_lookup]
+  sql: SELECT portfolio_id, quantity FROM analytics.v_positions WHERE symbol = 'NTPC'
+
+# --- metric and data together -------------------------------------------------------------
+- id: b01-sharpe-and-trades
+  manager: 2
+  question: What's the Sharpe ratio of my tech fund over 3 years, and which trades did I make in it in 2026?
+  intents: [both]
+  metrics: [sharpe_ratio]
+  portfolios: [201]
+  period: 3y
+  sql: |
+    SELECT trade_date, symbol, side, quantity FROM analytics.v_transactions
+    WHERE portfolio_id = 201 AND trade_date >= DATE '2026-01-01'
+
+- id: b02-return-and-trades
+  manager: 1
+  question: What was Asha Core Equity's total return in 2025, and list its trades in January 2026.
+  intents: [both]
+  metrics: [total_return]
+  portfolios: [102]
+  period: custom
+  start: "2025-01-01"
+  end: "2025-12-31"
+  sql: |
+    SELECT trade_date, symbol, side, quantity FROM analytics.v_transactions
+    WHERE portfolio_id = 102 AND trade_date BETWEEN DATE '2026-01-01' AND DATE '2026-01-31'
+
+# --- out of scope -------------------------------------------------------------------------
+- id: o01-advice-buy
+  manager: 1
+  question: Should I buy more HDFC Bank?
+  intents: [out_of_scope]
+  reason: investment_advice
+
+- id: o02-advice-predict
+  manager: 2
+  question: Which of my stocks will go up next month?
+  intents: [out_of_scope]
+  reason: investment_advice
+
+- id: o03-other-manager
+  manager: 1
+  question: Show me Ravi Iyer's holdings.
+  intents: [out_of_scope]
+  reason: other_manager
+
+- id: o04-write
+  manager: 3
+  question: Add a deposit of 10 lakh to my PSU fund.
+  intents: [out_of_scope]
+  reason: write_request
+
+- id: o05-off-topic
+  manager: 2
+  question: What's the weather in Mumbai today?
+  intents: [out_of_scope]
+  reason: off_topic
+
+- id: o06-off-topic-poem
+  manager: 3
+  question: Write me a poem about the stock market.
+  intents: [out_of_scope]
+  reason: off_topic
+
+# --- needs clarification ------------------------------------------------------------------
+- id: c01-dangling-reference
+  manager: 2
+  question: Compare it with the other one.
+  intents: [clarify]
+
+# --- follow-ups ---------------------------------------------------------------------------
+- id: f01-followup-metric
+  manager: 2
+  turns: ["What's the CAGR of my tech fund?"]
+  question: And its maximum drawdown?
+  intents: [metric]
+  metrics: [max_drawdown]
+  portfolios: [201]
+
+- id: f02-followup-period
+  manager: 3
+  turns: ["How has my PSU fund done since inception?"]
+  question: What about over the last year?
+  intents: [metric]
+  portfolios: [301]
+  period: 1y

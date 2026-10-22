@@ -93,3 +93,9 @@ def test_bad_requests_are_rejected(metrics_db):
         run(agent, 1, 11, ["happiness"], cfg=CFG)
     with pytest.raises(ValueError, match="not an available benchmark"):
         run(agent, 1, 11, ["beta"], benchmark="AAA", cfg=CFG)
+
+
+def test_var_states_its_frequency_in_plain_terms(metrics_db):
+    _, agent = metrics_db
+    (var,) = run(agent, 1, 11, ["var_historical"], cfg=CFG)
+    assert var.details["exceeded_about_one_trading_day_in"] == 20  # 95% confidence
