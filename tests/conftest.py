@@ -37,7 +37,7 @@ def fresh_database(name: str) -> Iterator[tuple[str, str]]:
 
     admin_url = make_conninfo(s.database_url, dbname=name)
     agent_url = make_conninfo(s.agent_database_url, dbname=name)
-    migrate(admin_url, agent_url)
+    migrate(admin_url, agent_url, make_conninfo(s.memory_database_url, dbname=name))
     try:
         yield admin_url, agent_url
     finally:

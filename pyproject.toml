@@ -22,6 +22,9 @@ dependencies = [
     "anthropic>=2.1",
     "pydantic>=2.7",
     "sqlglot>=30.0",
+    # phase 5: orchestration and conversation memory
+    "langgraph>=1.2",
+    "langgraph-checkpoint-postgres>=3.0",
 ]
 
 [project.optional-dependencies]
