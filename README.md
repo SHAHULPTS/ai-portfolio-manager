@@ -57,7 +57,7 @@ A question that needs raw data goes through LLM-written SQL. Three layers stand 
 2. **An AST guard (sqlglot).** It allows a single SELECT over the allowed views, with known columns only, no dangerous functions and a forced LIMIT.
 3. **The executor.** It uses prepared statements (no stacked commands), refuses expensive plans after an EXPLAIN check, and caps the rows returned.
 
-34 attack queries are tested against the guard, and the database layer is tested again with the guard bypassed. A test also shows that a prompt injection which fully fools the model still can't read another manager's data.
+34 attack queries are tested against the guard, and the database layer is tested again with the guard bypassed. A test also shows that a prompt injection which fully fools the model still can't read another manager's data. In a live run, Claude answered 5 of 8 sample questions correctly on the first try and correctly declined the other 3: a metric question, a prompt injection and a `DROP TABLE`.
 
 Try it (needs `ANTHROPIC_API_KEY` in `.env`):
 ```bash
