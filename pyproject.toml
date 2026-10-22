@@ -24,11 +24,13 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",
+    # independent reference implementation the metric formulas are checked against
+    "empyrical-reloaded>=0.5.10",
 ]
 
 [tool.setuptools]
 py-modules = ["config"]
-packages = ["db", "etl", "portfolio"]
+packages = ["db", "etl", "metrics", "portfolio"]
 
 [tool.ruff]
 line-length = 100

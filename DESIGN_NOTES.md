@@ -186,3 +186,53 @@ CAGR here is time-weighted (deposits and withdrawals removed), computed ad hoc f
 Every portfolio beats its benchmark, which no real fund book does. This isn't a bug. It's **survivorship bias**: the dataset contains only stocks that are in the index *today*, which are by definition the winners of the last decade. To measure it: equal-weighting the 90 current constituents that were already listed in January 2016 returns **20.5% a year against the NIFTY 50's 11.6%**. The synthetic portfolios sit inside that range.
 
 Any answer about "alpha" or "beating the benchmark" must be read in that light. The explainer (phase 5) should say so when it reports outperformance.
+
+---
+
+## Phase 3: Metric engine
+
+### Why metrics are code, not LLM output
+A Sharpe ratio from LLM-written SQL could be off by a missed cash flow or a wrong join and still look perfectly plausible. So every number the agent reports comes from a plain, unit-tested Python function. The LLM's only job here is to pick metric **names** from a fixed catalogue. Phase 5 gives the planner `CATALOG`'s keys as an enum, so it can't ask for something that doesn't exist.
+
+### How it's laid out
+| File | What it holds |
+|---|---|
+| `metrics/formulas.py` | The maths, as pure functions of daily-return series. No database. |
+| `metrics/holdings.py` | Sector allocation, concentration (HHI), P&L by stock. |
+| `metrics/catalog.py` | 27 named metrics. Each declares the inputs it needs and returns a `MetricResult`. |
+| `metrics/loaders.py` | Fixed, parameterised SQL. No LLM writes any of it. |
+| `metrics/engine.py` | `run(...)`, the single entry point the agent calls. |
+| `metrics/periods.py` | Turns `ytd`, `3y`, `since_inception` or explicit dates into one `(start, end)`. |
+
+### A result explains itself
+A `MetricResult` carries:
+- the value and its unit
+- the **formula in words**
+- the exact period and the number of trading days in it
+- the **assumptions** (risk-free 6.5%, 252-day annualisation, "price returns, dividends not included")
+- any extra numbers, such as drawdown peak, trough and recovery dates, or VaR in rupees
+
+The explainer in phase 5 only *restates* these. It never computes anything, and the output guard checks every number it writes against the result.
+
+### Conventions, and why
+- **Time-weighted returns:** `r_t = (NAV_t − flow_t) / NAV_{t−1} − 1`. A ₹50 lakh deposit is not a gain, and a withdrawal is not a loss. Drawdown runs on the time-weighted wealth index for the same reason; on raw NAV, a deposit could hide a crash.
+- **Period boundaries:** "2025" means returns for trading days in 2025, the first measured from the 31 December 2024 close. Every metric in one answer uses the same resolved window.
+- **CAGR uses calendar time.** At first I used empyrical's trading-day version, `(1 + R)^(252/n) − 1`. Then I counted: **NSE averages 247.8 trading days a year (2016–2025), not 252**. That overstated a 21% CAGR by about 0.4 points, and the Banking portfolio showed 11.6% instead of 11.4%. Reported CAGR is now `(1 + R)^(365.25/days) − 1`, which doesn't depend on how many days the market was open. Volatility and Sharpe keep the standard √252 scaling: the √248 difference is under 1% relative, and 252 is the convention every reference uses.
+- **VaR and CVaR** are 1-day, at 95%, reported as positive losses and in rupees on the current NAV. The parametric version notes that a normal distribution understates fat tails.
+- **Jensen's alpha** is `(1 + mean((r_p − r_f) − β(r_b − r_f)))^252 − 1`. A test with a portfolio that is exactly 2× the benchmark comes out to alpha = r_f. That's correct: leverage with no borrowing cost earns the risk-free rate as "alpha". It's a good reminder that alpha measures performance *relative to the CAPM line*, not skill.
+- **Holdings are rebuilt as of the period end** from transactions, using the same accounting module that filled the database. So "what did I hold at the end of 2023?" works. A test confirms that at the latest date this matches `v_positions` exactly.
+- **P&L by stock** is `end value − start value − net purchases`. A test proves the per-stock amounts sum to the portfolio's gain (NAV change minus flows) over any window. Nothing is lost or double-counted.
+
+### Testing the maths three ways
+1. **By hand:** each formula has a case worked out on paper. Examples: a ₹50 deposit inside a ₹110 → ₹160 NAV move is a 0% return; a 1.10 → 0.88 wealth path is a −20% drawdown; 21% over exactly two years is a 10% CAGR.
+2. **Against empyrical:** on four years of fat-tailed, correlated random returns, our numbers agree with the independent `empyrical-reloaded` library to **1e-9** for all 12 overlapping metrics. It's a dev-only dependency, and the app never imports it.
+3. **End to end:** a second test database holds a simulated book built by the real simulator and refresh code. All 27 metrics compute through the RLS-protected agent role. Asking for another manager's portfolio raises `PortfolioNotFound`, the same error as for a portfolio that doesn't exist, so the error itself reveals nothing.
+
+### Security: the metric path obeys RLS too
+The loaders connect as `agent_ro` with `app.manager_id` set, exactly like the LLM's SQL will in phase 4. There's no admin-connection shortcut that a bug in phase 5 could misuse to read another manager's data.
+
+### Sanity check on the real book
+All 27 metrics for all 7 portfolios compute in 0.5 s with no warnings, and the numbers match real market history:
+- The five portfolios started before 2020 hit their worst trough on 2020-03-23/24, the actual NIFTY Covid low.
+- Betas follow the mandates: Defensive 0.58, Tech 0.75, Infrastructure 1.09.
+- Sharpe ratios are 0.34–0.80, and 1-day 95% VaR is 1.4–2.2%.

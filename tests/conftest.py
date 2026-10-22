@@ -1,19 +1,24 @@
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 
+import numpy as np
+import pandas as pd
 import psycopg
 import pytest
 from psycopg.conninfo import make_conninfo
 
 from config import load_settings
 from db.migrate import migrate
+from etl.generate_portfolios import write_book
 from etl.refresh_derived import refresh
+from portfolio.mandates import Mandate
+from portfolio.simulator import simulate
 
-TEST_DB = "portfolio_test"
 
-
-@pytest.fixture(scope="session")
-def db_urls():
-    """Fresh, migrated, seeded test database. Yields (admin_url, agent_url).
+@contextmanager
+def fresh_database(name: str) -> Iterator[tuple[str, str]]:
+    """Create, migrate and finally drop a throwaway database. Yields (admin_url, agent_url).
 
     Skips when Postgres is unreachable, unless REQUIRE_DB=1 (set in CI) makes that a failure.
     """
@@ -27,17 +32,92 @@ def db_urls():
         pytest.skip(f"Postgres not reachable: {e}")
 
     with server:
-        server.execute(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)")
-        server.execute(f"CREATE DATABASE {TEST_DB}")
+        server.execute(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)")
+        server.execute(f"CREATE DATABASE {name}")
 
-    admin_url = make_conninfo(s.database_url, dbname=TEST_DB)
-    agent_url = make_conninfo(s.agent_database_url, dbname=TEST_DB)
+    admin_url = make_conninfo(s.database_url, dbname=name)
+    agent_url = make_conninfo(s.agent_database_url, dbname=name)
     migrate(admin_url, agent_url)
-    _seed(admin_url)
-    yield admin_url, agent_url
+    try:
+        yield admin_url, agent_url
+    finally:
+        with psycopg.connect(server_url, autocommit=True) as server:
+            server.execute(f"DROP DATABASE IF EXISTS {name} WITH (FORCE)")
 
-    with psycopg.connect(server_url, autocommit=True) as server:
-        server.execute(f"DROP DATABASE IF EXISTS {TEST_DB} WITH (FORCE)")
+
+@pytest.fixture(scope="session")
+def db_urls():
+    """Tiny hand-written book: two managers, one portfolio and one trade each."""
+    with fresh_database("portfolio_test") as urls:
+        _seed(urls[0])
+        yield urls
+
+
+@pytest.fixture(scope="session")
+def metrics_db():
+    """A year and a half of synthetic prices and a simulated book, for the metric engine.
+
+    Manager 1 owns portfolio 11, manager 2 owns portfolio 21. Built with the real simulator
+    and refresh code, so the engine is tested on data shaped exactly like production's.
+    """
+    with fresh_database("portfolio_metrics_test") as urls:
+        _seed_simulated(urls[0])
+        yield urls
+
+
+SIM_SYMBOLS = {
+    "AAA": "Information Technology",
+    "BBB": "Information Technology",
+    "CCC": "Financial Services",
+    "DDD": "FMCG",
+    "EEE": "Healthcare",
+}
+
+
+def _seed_simulated(admin_url: str) -> None:
+    calendar = pd.bdate_range("2023-01-02", periods=380)
+    rng = np.random.default_rng(11)
+    market = rng.normal(0.0004, 0.01, len(calendar))
+    closes = pd.DataFrame(
+        {
+            s: 100 * np.exp((0.9 * market + rng.normal(0, 0.008, len(calendar))).cumsum())
+            for s in SIM_SYMBOLS
+        },
+        index=calendar,
+    )
+    closes["NIFTY50"] = 10_000 * np.exp(market.cumsum())
+    listing = {s: (calendar[0], calendar[-1]) for s in closes.columns}
+    mandate = Mandate(
+        "Synthetic", "NIFTY50", {"AAA": 0.3, "BBB": 0.2, "CCC": 0.3, "DDD": 0.2}, ("EEE",)
+    )
+
+    portfolios, trades, flows = [], [], []
+    for pid, manager_id, cash in [(11, 1, 1_000_000), (21, 2, 3_000_000)]:
+        t, fl = simulate(
+            pid, mandate, closes, listing, calendar[5], cash, np.random.default_rng(pid)
+        )
+        portfolios.append(
+            (pid, manager_id, f"P{pid}", mandate.name, "NIFTY50", calendar[5].date(), cash)
+        )
+        trades += t
+        flows += fl
+
+    with psycopg.connect(admin_url) as conn:
+        conn.cursor().executemany(
+            "INSERT INTO core.securities (symbol, name, sector, industry, is_index)"
+            " VALUES (%s, %s, %s, %s, %s)",
+            [(s, f"{s} Ltd", sector, sector, False) for s, sector in SIM_SYMBOLS.items()]
+            + [("NIFTY50", "NIFTY 50 Index", "Index", "Broad Market Index", True)],
+        )
+        with conn.cursor().copy(
+            "COPY core.prices_daily (symbol, date, open, high, low, close, volume) FROM STDIN"
+        ) as copy:
+            for s in closes.columns:
+                for d, px in closes[s].items():
+                    px = round(float(px), 4)
+                    copy.write_row((s, d.date(), px, px, px, px, 0))
+        write_book(conn, portfolios, trades, flows)
+        refresh(conn)
 
 
 def _seed(admin_url: str) -> None:

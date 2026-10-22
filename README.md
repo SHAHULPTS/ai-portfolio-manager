@@ -46,6 +46,11 @@ The raw data is 1-minute OHLCV bars for each stock plus the NIFTY 50 and NIFTY B
 ## The synthetic book
 There are 3 fictional managers and 7 portfolios (Banking, Balanced, Tech, Defensive, Consumption, PSU & Energy, Infrastructure). Each one trades real NSE closes from a random start in 2016–2021 until April 2026. The simulation covers quarterly rebalancing within a drift band, discretionary swaps, deposits and withdrawals, forced exits when a stock's data ends, and 0.03% fees. The generator is seeded, so every rebuild gives the same book, and it refuses to write anything that breaks an invariant (negative cash, shorts, trades off the closing price …).
 
+## Metrics
+There are 27 named metrics in `metrics/catalog.py`: returns (total, CAGR, monthly, vs benchmark), risk (volatility, max drawdown with dates, downside deviation, VaR, CVaR), risk-adjusted (Sharpe, Sortino, Calmar), relative (beta, alpha, tracking error, information ratio, correlation) and holdings (positions, sector allocation, concentration, realised and unrealised P&L, P&L by stock, correlation matrix, risk contribution).
+
+They are time-weighted, so deposits and withdrawals aren't counted as returns, and they work for any period ("YTD", "3y", explicit dates). They agree with the `empyrical` library to 1e-9. Each result carries its formula and assumptions, so the explanation can state them.
+
 ## Limitations, stated up front
 - **Survivorship bias.** The universe is today's index members, so every portfolio beats its benchmark. Equal-weighting those stocks from 2016 returns 20.5% a year against the NIFTY's 11.6%. That is the bias, not skill.
 - **Price returns only.** Dividends aren't in the data.
