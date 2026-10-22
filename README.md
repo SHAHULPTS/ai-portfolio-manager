@@ -51,6 +51,18 @@ There are 27 named metrics in `metrics/catalog.py`: returns (total, CAGR, monthl
 
 They are time-weighted, so deposits and withdrawals aren't counted as returns, and they work for any period ("YTD", "3y", explicit dates). They agree with the `empyrical` library to 1e-9. Each result carries its formula and assumptions, so the explanation can state them.
 
+## The agent
+LangGraph wires three Claude models around the tested metric engine:
+- A **planner** (Haiku 5.5) routes each question to metrics, a SQL lookup, both in parallel, a clarifying question (which pauses the graph and resumes on your reply), or a fixed out-of-scope reply.
+- The **SQL writer** (Sonnet 5.5) fetches raw facts.
+- An **explainer** (Sonnet 5.5) turns the results into an answer.
+
+Every number in that answer is checked against the computed results before you see it. Conversations are kept in Postgres, under a role that can't read portfolio data, so follow-ups like "and how risky has it been?" work.
+
+```bash
+python -m agent.cli --manager 2 --trace
+```
+
 ## Guardrails
 A question that needs raw data goes through LLM-written SQL. Three layers stand between that SQL and the database:
 1. **The database itself.** A read-only role sees only curated views. Row-level security limits every query to the signed-in manager, there's a statement timeout, and `set_config` is revoked so a query can't switch managers.

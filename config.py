@@ -15,6 +15,7 @@ class Settings:
     anthropic_api_key: str
     database_url: str
     agent_database_url: str
+    memory_database_url: str
     router_model: str
     reasoning_model: str
     risk_free_rate: float
@@ -35,6 +36,10 @@ def load_settings() -> Settings:
         ),
         agent_database_url=env(
             "AGENT_DATABASE_URL", "postgresql://agent_ro:change-me-too@localhost:5433/portfolio"
+        ),
+        memory_database_url=env(
+            "MEMORY_DATABASE_URL",
+            "postgresql://agent_memory:change-me-memory@localhost:5433/portfolio",
         ),
         router_model=env("ROUTER_MODEL", "claude-haiku-5-5"),
         reasoning_model=env("REASONING_MODEL", "claude-sonnet-5-5"),

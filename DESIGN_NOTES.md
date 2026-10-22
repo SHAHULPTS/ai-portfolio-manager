@@ -308,3 +308,64 @@ Eight questions only show that it works; they don't measure accuracy. Phase 7's 
 ```bash
 python -m agent.sql.cli "Which of my holdings are showing a loss?" --manager 2
 ```
+
+---
+
+## Phase 5: The LangGraph agent
+
+### The graph (`agent/graph.py`)
+```
+start_turn → input_guard → plan ─┬─→ run_metrics ─┬─→ explain → END
+                  │               ├─→ run_sql ─────┘
+                  │               ├─→ clarify (interrupt) → plan
+                  └───────────────┴─→ refuse → END
+```
+- **Three LLMs, each with one job:**
+  - The **planner** (Haiku 5.5) decides *what* is being asked.
+  - The **SQL writer** (Sonnet 5.5, phase 4) fetches *raw facts*.
+  - The **explainer** (Sonnet 5.5) turns results into *words*.
+
+  The **metric engine** (phase 3) computes every number and contains no LLM.
+- **Fan-out:** for "both", the routing function returns `["run_metrics", "run_sql"]`. LangGraph runs both in the same step, and `explain` runs **once**, after both have finished. A test counts the explainer calls.
+- **Clarify** uses `interrupt()`. The graph pauses with a question, the manager's reply resumes it via `Command(resume=…)`, and the planner tries again with that reply. It may clarify **only once per turn**, so it can't get stuck in a loop of questions. The planner is also told *not* to clarify just because several portfolios exist; it covers all of them instead.
+- **Memory:** each `thread_id` is one conversation. A `history` reducer keeps earlier turns, so "and how risky has it been?" carries over the portfolio and the period. The per-turn `trace` uses a reducer that can be reset, so each answer shows only its own steps.
+- **Dependency injection:** every node gets its LLMs through `Deps`. The 34 graph and guard tests run the whole graph with scripted fakes on the simulated test database, with no API key needed.
+
+### The planner (`agent/planner.py`)
+- **It can only ask for metrics that exist.** Its structured-output schema builds the metric field as `Literal[*CATALOG]`, so Claude's output can't name one outside the catalogue, and the period must be one of the engine's presets.
+- **Its output is still treated as untrusted.** `sanitize()` drops portfolio ids the manager doesn't own. If none are left, the question becomes `out_of_scope / other_manager`, and RLS would refuse anyway. It also de-duplicates metrics, caps them at 8, and repairs inconsistent plans (for example, "both" with no data question).
+- **No server-side fallback:** Haiku 5.5 doesn't support it, so a refusal becomes a polite error.
+
+### Guardrail layer 3: the LLM's input and output
+- **Input guard (`agent/input_guard.py`)** is deliberately small and deterministic. It strips control characters and caps length. A message that is itself a SQL write (`DROP TABLE …`) gets a fixed reply **without any LLM call**. Injection phrases are *flagged* in the trace but not blocked: "ignore the cash, what's my equity value?" is a fine question. The plan called for a separate Haiku classifier here, but I dropped it. The planner already labels advice, other managers and write requests as out of scope, and a second model call would add cost and latency without adding a guarantee the database doesn't already give.
+- **Out-of-scope replies are fixed text, not LLM output:** investment advice, other managers, write requests and off-topic questions. This is cheaper, and it can't be talked round.
+- **Output guard (`agent/output_guard.py`) checks the numbers.** Every number in the explanation must match a number in the results after one of the conversions an explanation legitimately uses (fraction → %, ₹ → thousand/lakh/crore, sign dropped), within the rounding shown. Dates, years, small counts and the manager's own numbers are allowed. It catches the two failures that matter: an **invented** figure ("Sharpe 1.85") and a figure the explainer **computed itself** ("beat the index by 2.5 points"). On a failure, the explainer gets one rewrite with the bad numbers listed. If that also fails, the answer becomes a plain summary built from a template. Either way, the manager never sees an unverified number.
+- **A disclaimer is always added:** synthetic portfolios, price returns only, not investment advice.
+
+### A separate role for conversation memory
+LangGraph's `PostgresSaver` has to write. `agent_ro` must never write, and the admin role must never reach the app. So migration 005 adds **`agent_memory`**: a login role that owns only the `agent_memory` schema (where its four checkpoint tables live) and has no rights on `core` or `analytics`. A test confirms it's refused on both.
+
+Thread ownership: the first manager on a thread owns it. A different `manager_id` on that thread gets "this conversation belongs to a different manager". `Agent.resume` checks the owner too, because resuming skips `start_turn`.
+
+### Live run (2026-10-22)
+I had a 7-turn conversation as manager 2, with real models and Postgres memory:
+
+| Turn | Routing | Notes |
+|---|---|---|
+| Tech fund vs benchmark since inception | metric: total_return, cagr, excess_return on 201 | Stated the survivorship caveat unprompted, from the result's assumptions |
+| "And how risky has it been?" | metric: volatility, max_drawdown, var_historical **on 201** | The follow-up kept the portfolio. Drawdown 2020-02-19 → 2020-03-23, recovered 2020-08-06 |
+| "Which stocks made **it** the most money over the last year?" | metric: pnl_contribution, 1y, 201 | Correct winners and losers table |
+| Sharpe of all portfolios, 3 years | metric on all three | Comparison table, with the risk-free rate stated |
+| Withdrawals in 2025 | data_lookup → SQL, first attempt | Matches the database |
+| "Should I sell Wipro?" | out_of_scope / investment_advice | Fixed reply, 2.0 s |
+| "What's Asha Menon's portfolio worth?" | out_of_scope / other_manager | Fixed reply, 1.9 s |
+
+Each turn took 2–9 s. The run turned up three problems, now fixed and covered by tests:
+1. **The explainer said "the payload gives…".** It now must write for the manager and never mention internal terms.
+2. **"Only portfolio 201 has risk figures, not the other two"** was noise on a follow-up clearly about 201. The cause was that the explainer received the full list of portfolios. It now receives only the ones in question.
+3. **A false positive in the output guard.** "1 January to 31 December" flagged `31` as unsupported and cost an extra LLM call. Day-month dates are now recognised. A bare "31 points" is still flagged.
+
+Try it:
+```bash
+python -m agent.cli --manager 2 --trace
+```
