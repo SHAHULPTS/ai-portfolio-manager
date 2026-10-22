@@ -21,6 +21,8 @@ class Settings:
     trading_days: int
     sql_row_limit: int
     sql_timeout_ms: int
+    sql_max_cost: float
+    sql_writer_effort: str
 
 
 def load_settings() -> Settings:
@@ -40,4 +42,6 @@ def load_settings() -> Settings:
         trading_days=int(env("TRADING_DAYS", "252")),
         sql_row_limit=int(env("SQL_ROW_LIMIT", "500")),
         sql_timeout_ms=int(env("SQL_TIMEOUT_MS", "3000")),
+        sql_max_cost=float(env("SQL_MAX_COST", "2000000")),
+        sql_writer_effort=env("SQL_WRITER_EFFORT", "medium"),
     )

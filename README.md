@@ -51,6 +51,19 @@ There are 27 named metrics in `metrics/catalog.py`: returns (total, CAGR, monthl
 
 They are time-weighted, so deposits and withdrawals aren't counted as returns, and they work for any period ("YTD", "3y", explicit dates). They agree with the `empyrical` library to 1e-9. Each result carries its formula and assumptions, so the explanation can state them.
 
+## Guardrails
+A question that needs raw data goes through LLM-written SQL. Three layers stand between that SQL and the database:
+1. **The database itself.** A read-only role sees only curated views. Row-level security limits every query to the signed-in manager, there's a statement timeout, and `set_config` is revoked so a query can't switch managers.
+2. **An AST guard (sqlglot).** It allows a single SELECT over the allowed views, with known columns only, no dangerous functions and a forced LIMIT.
+3. **The executor.** It uses prepared statements (no stacked commands), refuses expensive plans after an EXPLAIN check, and caps the rows returned.
+
+34 attack queries are tested against the guard, and the database layer is tested again with the guard bypassed. A test also shows that a prompt injection which fully fools the model still can't read another manager's data. In a live run, Claude answered 5 of 8 sample questions correctly on the first try and correctly declined the other 3: a metric question, a prompt injection and a `DROP TABLE`.
+
+Try it (needs `ANTHROPIC_API_KEY` in `.env`):
+```bash
+python -m agent.sql.cli "Which of my holdings are showing a loss?" --manager 2
+```
+
 ## Limitations, stated up front
 - **Survivorship bias.** The universe is today's index members, so every portfolio beats its benchmark. Equal-weighting those stocks from 2016 returns 20.5% a year against the NIFTY's 11.6%. That is the bias, not skill.
 - **Price returns only.** Dividends aren't in the data.

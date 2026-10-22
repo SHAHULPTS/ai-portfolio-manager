@@ -6,23 +6,16 @@ PortfolioNotFound, the same as for a portfolio that doesn't exist, so the error 
 leaks nothing.
 """
 
-from collections.abc import Iterator
-from contextlib import contextmanager
-
 import pandas as pd
 import psycopg
-from psycopg import sql
+
+from db.session import agent_session
+
+__all__ = ["PortfolioNotFound", "agent_session"]
 
 
 class PortfolioNotFound(LookupError):
     pass
-
-
-@contextmanager
-def agent_session(agent_url: str, manager_id: int) -> Iterator[psycopg.Connection]:
-    with psycopg.connect(agent_url) as conn, conn.transaction():
-        conn.execute(sql.SQL("SET LOCAL app.manager_id = {}").format(sql.Literal(str(manager_id))))
-        yield conn
 
 
 def list_portfolios(conn: psycopg.Connection) -> pd.DataFrame:
