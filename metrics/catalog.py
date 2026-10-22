@@ -203,9 +203,16 @@ def downside_deviation(inp, cfg):
     )
 
 
-def _var_details(inp, loss):
+def _var_details(inp, loss, confidence):
     nav_end = float(inp.nav["nav"].loc[: inp.end].iloc[-1])
-    return {"loss_inr_on_current_nav": loss * nav_end, "nav_inr": nav_end}
+    # "95%" in everyday terms. Computed here so the explainer can say "about 1 trading day in
+    # 20" as a checked fact rather than deriving it (the output guard rejects derived numbers).
+    one_day_in = round(1 / (1 - confidence))
+    return {
+        "loss_inr_on_current_nav": loss * nav_end,
+        "nav_inr": nav_end,
+        "exceeded_about_one_trading_day_in": one_day_in,
+    }
 
 
 def var_historical(inp, cfg):
@@ -220,7 +227,7 @@ def var_historical(inp, cfg):
         v,
         "%",
         "5th percentile of daily returns, as a positive loss",
-        details=_var_details(inp, v),
+        details=_var_details(inp, v, cfg.var_confidence),
         assumptions={"confidence": cfg.var_confidence},
     )
 
@@ -237,7 +244,7 @@ def var_parametric(inp, cfg):
         v,
         "%",
         "-(mean + z x std) of daily returns, z = -1.645",
-        details=_var_details(inp, v),
+        details=_var_details(inp, v, cfg.var_confidence),
         assumptions={
             "confidence": cfg.var_confidence,
             "distribution": "normal (understates fat tails)",
@@ -257,7 +264,7 @@ def cvar(inp, cfg):
         v,
         "%",
         "average loss on the worst 5% of days",
-        details=_var_details(inp, v),
+        details=_var_details(inp, v, cfg.var_confidence),
         assumptions={"confidence": cfg.var_confidence},
     )
 

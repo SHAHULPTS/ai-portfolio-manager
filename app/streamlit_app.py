@@ -7,13 +7,15 @@ whoever is "signed in" is the manager_id every query runs under, so row-level se
 this page, decides what data can be seen.
 """
 
+import json
 import uuid
 from contextlib import ExitStack
+from pathlib import Path
 
 import streamlit as st
 
 from agent.app import open_agent
-from app.views import answer_body, chart_for, metrics_table, receipt
+from app.views import answer_body, chart_for, metrics_table, pretty, receipt
 from config import load_settings
 from db.session import agent_session
 from metrics.loaders import list_portfolios
@@ -82,6 +84,22 @@ def portfolios_for(manager_id: int) -> list[dict]:
         return list_portfolios(conn).to_dict("records")
 
 
+DEMO_FILE = Path(__file__).parent / "demo_conversation.json"
+
+
+def demo_conversation() -> dict | None:
+    """A recorded real conversation, shown when the page is opened with ?demo=1."""
+    if st.query_params.get("demo") != "1" or not DEMO_FILE.exists():
+        return None
+    demo = json.loads(DEMO_FILE.read_text())
+    return {
+        "manager": demo["manager"],
+        "thread": f"demo-{uuid.uuid4().hex}",
+        "messages": demo["messages"],
+        "awaiting_reply": False,
+    }
+
+
 def new_conversation(manager_id: int) -> None:
     st.session_state.conv = {
         "manager": manager_id,
@@ -102,7 +120,7 @@ def render_reply(reply: dict) -> None:
     metrics, sql = reply.get("metrics"), reply.get("sql")
     if reply.get("status") != "answered":
         return
-    with st.expander("How this was answered"):
+    with st.expander("How this was answered", expanded=st.query_params.get("expand") == "1"):
         tabs = (["Numbers"] if metrics else []) + (["SQL"] if sql else []) + ["Plan", "Steps"]
         for tab, name in zip(st.tabs(tabs), tabs, strict=True):
             with tab:
@@ -111,13 +129,13 @@ def render_reply(reply: dict) -> None:
                     for m in metrics:
                         if m.get("table") and m["name"] != "correlation_matrix":
                             st.caption(f"{m['portfolio_name']}: {m['label']}")
-                            st.dataframe(m["table"], hide_index=True, width="stretch")
+                            st.dataframe(pretty(m["table"]), hide_index=True, width="stretch")
                 elif name == "SQL":
                     st.caption(sql.get("explanation", ""))
                     if sql.get("sql"):
                         st.code(sql["sql"], language="sql")
                     if sql.get("rows"):
-                        st.dataframe(sql["rows"], hide_index=True, width="stretch")
+                        st.dataframe(pretty(sql["rows"]), hide_index=True, width="stretch")
                         if sql.get("truncated"):
                             st.caption(
                                 "Only the first rows are shown; the query hit the row limit."
@@ -180,6 +198,8 @@ if not settings.anthropic_api_key:
 
 with st.sidebar:
     manager = st.selectbox("Signed in as", list(MANAGERS), format_func=MANAGERS.get, index=1)
+    if "conv" not in st.session_state and (demo := demo_conversation()):
+        st.session_state.conv = demo
     if "conv" not in st.session_state or st.session_state.conv["manager"] != manager:
         new_conversation(manager)
 

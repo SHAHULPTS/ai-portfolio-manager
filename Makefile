@@ -36,4 +36,10 @@ data: resample load verify-data portfolios
 ui:
 	streamlit run app/streamlit_app.py
 
-.PHONY: install lint test db-up db-down migrate resample load verify-data portfolios refresh data ui
+evals:
+	python -m evals.run_evals
+
+demo:
+	python -m app.record_demo
+
+.PHONY: install lint test db-up db-down migrate resample load verify-data portfolios refresh data ui evals demo

@@ -11,6 +11,13 @@ from agent.output_guard import DISCLAIMER, numbers_in_text
 GAIN, LOSS, INK, TEAL = "#1E7A4F", "#A8323E", "#16232B", "#0F5C63"
 
 
+def pretty(rows) -> "pd.io.formats.style.Styler":
+    """Evidence tables: thousands separators and two decimals, instead of raw floats."""
+    df = pd.DataFrame(rows)
+    numeric = df.select_dtypes("number").columns
+    return df.style.format("{:,.2f}", subset=numeric, na_rep="")
+
+
 def answer_body(answer: str) -> str:
     return answer.removesuffix(DISCLAIMER)
 
@@ -105,7 +112,8 @@ def chart_for(reply: dict):
         return _comparison_chart(reply["metrics"])
     if "pnl_contribution" in by_name:
         df = pd.DataFrame(by_name["pnl_contribution"]["table"])
-        return _bars(df, "symbol", "pnl", "P&L by stock (INR)", ",.0f", signed=True)
+        df["pnl_lakh"] = df["pnl"] / 1e5  # Indian convention, matching the answer text
+        return _bars(df, "symbol", "pnl_lakh", "P&L by stock (₹ lakh)", ",.1f", signed=True)
     if "sector_allocation" in by_name:
         df = pd.DataFrame(by_name["sector_allocation"]["table"])
         return _bars(df, "sector", "weight", "Weight by sector", ".0%")
@@ -142,11 +150,13 @@ def _comparison_chart(metrics: list[dict]):
         ]
     )
     unit = scalar[0]["unit"]
-    fmt = {"%": ".1%", "ratio": ".2f", "INR": ",.0f"}[unit]
+    fmt = {"%": ".1%", "ratio": ".2f", "INR": ",.1f"}[unit]
+    if unit == "INR":
+        df["value"] = df["value"] / 1e5  # plot rupees in lakh, as the answers do
     if first == "pnl_contribution":  # its label says "by stock"; across portfolios it's totals
-        title = "Total P&L by portfolio (INR)"
+        title = "Total P&L by portfolio (₹ lakh)"
     else:
-        title = scalar[0]["label"] + (" (INR)" if unit == "INR" else "")
+        title = scalar[0]["label"] + (" (₹ lakh)" if unit == "INR" else "")
     return _bars(df, "portfolio", "value", title, fmt, signed=True)
 
 
