@@ -18,6 +18,10 @@ dependencies = [
     # phase 2: portfolio simulation and accounting
     "numpy>=1.26",
     "pandas>=2.2",
+    # phase 4: SQL writer and guard
+    "anthropic>=2.1",
+    "pydantic>=2.7",
+    "sqlglot>=30.0",
 ]
 
 [project.optional-dependencies]
@@ -30,7 +34,7 @@ dev = [
 
 [tool.setuptools]
 py-modules = ["config"]
-packages = ["db", "etl", "metrics", "portfolio"]
+packages = ["agent", "agent.sql", "db", "etl", "metrics", "portfolio"]
 
 [tool.ruff]
 line-length = 100
